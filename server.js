@@ -28,10 +28,11 @@ app.post("/", async (req, res) => {
 
 const submission = {
   user_id: parsedData.user_id ?? null,
-  name: parsedData.q11_Name
-    ? `${parsedData.q11_Name.first ?? ""} ${parsedData.q11_Name.last ?? ""}`
-    : parsedData.pretty?.match(/Name:([^,]+)/)?.[1]?.trim() ?? null,
-  email: parsedData.q12_Email ?? "",
+  name:
+    parsedData.q11_Name
+      ? `${parsedData.q11_Name.first ?? ""} ${parsedData.q11_Name.last ?? ""}`
+      : parsedData.pretty?.match(/Name:([^,]+)/)?.[1]?.trim() ?? null,
+  email: parsedData.email ?? parsedData.q12_Email ?? "",
 
   activate_percentage: parsedData.Activate_Percentage ?? "",
   activate_category: parsedData.Activate_Category ?? "",
