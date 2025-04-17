@@ -20,15 +20,14 @@ app.post("/", async (req, res) => {
   try {
     console.log("📥 Incoming Submission:\n", JSON.stringify(req.body, null, 2))
 
-    // ✅ Handle both rawRequest (stringified JSON) or flat payload
     const parsedData = req.body.rawRequest
       ? JSON.parse(req.body.rawRequest)
       : req.body
 
-    // 🐛 Debugging - show all keys we received
     console.log("🔎 Full parsed data keys:", Object.keys(parsedData))
 
-    const userId = parsedData.user_id
+    // ✅ Correct field reference from Jotform
+    const userId = parsedData.q189_user_id
     const submittedEmail = parsedData.email ?? ""
 
     console.log("🧠 user_id received:", userId)
@@ -37,7 +36,6 @@ app.post("/", async (req, res) => {
       throw new Error("Missing user_id in submitted data")
     }
 
-    // 🔍 Lookup row by user_id
     const { data: existingRow, error: lookupError } = await supabase
       .from("assessment_results")
       .select("email")
@@ -54,7 +52,6 @@ app.post("/", async (req, res) => {
       console.warn(`⚠️ Email mismatch. Was "${originalEmail}", now "${submittedEmail}". Updating.`)
     }
 
-    // 🔄 Update the assessment row
     const { data, error } = await supabase
       .from("assessment_results")
       .update({
@@ -106,7 +103,6 @@ app.post("/", async (req, res) => {
   }
 })
 
-// 🟢 Optional GET route to prevent 404s
 app.get("/", (req, res) => {
   res.send("✅ Webhook is live and accepting POSTs from Jotform.")
 })
