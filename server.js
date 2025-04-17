@@ -12,14 +12,15 @@ app.use(bodyParser.json())
 app.use(upload.none())
 
 const SUPABASE_URL = "https://srkuufwbwqipohhcmqmu.supabase.co"
-const SUPABASE_KEY = "your-anon-key"
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNya3V1Zndid3FpcG9oaGNtcW11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxMTA1MDYsImV4cCI6MjA1ODY4NjUwNn0.XuN_eG8tEl1LQp84XK1HwwksWsyc41L_xeqbxh-fM-8"
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 app.post("/", async (req, res) => {
   try {
-    console.log("📥 Raw Submission:\n", JSON.stringify(req.body, null, 2))
+    console.log("📥 Incoming Submission:\n", JSON.stringify(req.body, null, 2))
 
-    // ✅ Support both flat and nested ("rawRequest") Jotform formats
+    // ✅ Handle both rawRequest (stringified JSON) or flat payload
     const parsedData = req.body.rawRequest
       ? JSON.parse(req.body.rawRequest)
       : req.body
@@ -33,7 +34,7 @@ app.post("/", async (req, res) => {
       throw new Error("Missing user_id in submitted data")
     }
 
-    // 🔍 Lookup existing row
+    // 🔍 Lookup row by user_id
     const { data: existingRow, error: lookupError } = await supabase
       .from("assessment_results")
       .select("email")
@@ -50,7 +51,7 @@ app.post("/", async (req, res) => {
       console.warn(`⚠️ Email mismatch. Was "${originalEmail}", now "${submittedEmail}". Updating.`)
     }
 
-    // 🌱 Update existing row
+    // 🔄 Update the assessment row
     const { data, error } = await supabase
       .from("assessment_results")
       .update({
@@ -100,6 +101,11 @@ app.post("/", async (req, res) => {
     console.error("❌ Webhook error:", err.message)
     res.status(500).send("Internal Server Error")
   }
+})
+
+// 🟢 Optional GET route to prevent 404s
+app.get("/", (req, res) => {
+  res.send("✅ Webhook is live and accepting POSTs from Jotform.")
 })
 
 app.listen(port, () => {
