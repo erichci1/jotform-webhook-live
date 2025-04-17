@@ -12,31 +12,47 @@ app.use(bodyParser.json())
 app.use(upload.none())
 
 const SUPABASE_URL = "https://srkuufwbwqipohhcmqmu.supabase.co"
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." // your full anon key
+const SUPABASE_KEY = "your-anon-key"
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 app.post("/", async (req, res) => {
   try {
-    console.log("📥 Raw Submission Received:\n", JSON.stringify(req.body, null, 2))
+    console.log("📥 Raw Submission:\n", JSON.stringify(req.body, null, 2))
 
     const rawRequest = req.body.rawRequest
     if (!rawRequest) throw new Error("Missing rawRequest from Jotform")
 
     const parsedData = JSON.parse(rawRequest)
     const userId = parsedData.user_id
+    const submittedEmail = parsedData.email ?? ""
 
-    if (!userId) {
-      throw new Error("Missing user_id in submitted data")
+    if (!userId) throw new Error("Missing user_id in submitted data")
+
+    // Step 1: Look up the existing row
+    const { data: existingRow, error: lookupError } = await supabase
+      .from("assessment_results")
+      .select("email")
+      .eq("user_id", userId)
+      .single()
+
+    if (lookupError || !existingRow) {
+      console.error("❌ No row found for user_id:", userId)
+      return res.status(400).send("User not found in assessment_results")
     }
 
-    // 🌱💧 Water the seed: update existing row
+    const originalEmail = existingRow.email
+    if (originalEmail !== submittedEmail) {
+      console.warn(`⚠️ Email mismatch. Was "${originalEmail}", now "${submittedEmail}". Updating.`)
+    }
+
+    // Step 2: Update the row with full assessment data
     const { data, error } = await supabase
       .from("assessment_results")
       .update({
         name: parsedData.q11_Name
           ? `${parsedData.q11_Name.first ?? ""} ${parsedData.q11_Name.last ?? ""}`
-          : parsedData.pretty?.match(/Name:([^,]+)/)?.[1]?.trim() ?? null,
-        email: parsedData.q12_Email ?? "",
+          : null,
+        email: submittedEmail,
 
         activate_percentage: parsedData.q187_activate_percentage ?? "",
         activate_category: parsedData.q134_activate_category ?? "",
@@ -72,8 +88,9 @@ app.post("/", async (req, res) => {
       return res.status(500).send("Update failed.")
     }
 
-    console.log("✅ Seed watered. Row updated successfully:", data)
+    console.log("✅ Assessment completed. Row updated successfully.")
     res.status(200).send("OK")
+
   } catch (err) {
     console.error("❌ Webhook error:", err.message)
     res.status(500).send("Internal Server Error")
