@@ -25,6 +25,9 @@ app.post("/", async (req, res) => {
       ? JSON.parse(req.body.rawRequest)
       : req.body
 
+    // 🐛 Debugging - show all keys we received
+    console.log("🔎 Full parsed data keys:", Object.keys(parsedData))
+
     const userId = parsedData.user_id
     const submittedEmail = parsedData.email ?? ""
 
