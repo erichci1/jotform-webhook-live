@@ -19,15 +19,15 @@ app.post("/", async (req, res) => {
   try {
     console.log("📥 Raw Submission:\n", JSON.stringify(req.body, null, 2))
 
-    const rawRequest = req.body.rawRequest
-    if (!rawRequest) throw new Error("Missing rawRequest from Jotform")
-
-    const parsedData = JSON.parse(rawRequest)
+    const parsedData = req.body // ✅ Flattened now
     const userId = parsedData.user_id
     const submittedEmail = parsedData.email ?? ""
 
-    if (!userId) throw new Error("Missing user_id in submitted data")
+    if (!userId) {
+      throw new Error("Missing user_id in submitted data")
+    }
 
+    // ... (rest of the logic remains unchanged)
     // Step 1: Look up the existing row
     const { data: existingRow, error: lookupError } = await supabase
       .from("assessment_results")
