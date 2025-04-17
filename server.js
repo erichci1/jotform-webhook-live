@@ -32,31 +32,31 @@ const submission = {
     parsedData.q11_Name
       ? `${parsedData.q11_Name.first ?? ""} ${parsedData.q11_Name.last ?? ""}`
       : parsedData.pretty?.match(/Name:([^,]+)/)?.[1]?.trim() ?? null,
-  email: parsedData.email ?? parsedData.q12_Email ?? "",
+  email: parsedData.q12_Email ?? parsedData.email ?? "",
 
-  activate_percentage: parsedData.Activate_Percentage ?? "",
-  activate_category: parsedData.Activate_Category ?? "",
-  activate_insight: parsedData.Activate_WTM ?? "",
-  activate_yns: parsedData.Activate_YNS ?? "",
+  activate_percentage: parsedData.q187_activate_percentage ?? "",
+  activate_category: parsedData.q134_activate_category ?? "",
+  activate_insight: parsedData.q155_activate_insight ?? "",
+  activate_yns: parsedData.q177_activate_yns ?? "",
 
-  build_percentage: parsedData.Build_Percentage ?? "",
-  build_category: parsedData.Build_Category ?? "",
-  build_insight: parsedData.Build_WTM ?? "",
-  build_yns: parsedData.Build_YNS ?? "",
+  build_percentage: parsedData.q129_build_percentage ?? "",
+  build_category: parsedData.q136_build_category ?? "",
+  build_insight: parsedData.q156_build_insight ?? "",
+  build_yns: parsedData.q178_build_yns ?? "",
 
-  leverage_percentage: parsedData.Leverage_Percentage ?? "",
-  leverage_category: parsedData.Leverage_Category ?? "",
-  leverage_insight: parsedData.Leverage_WTM ?? "",
-  leverage_yns: parsedData.Leverage_YNS ?? "",
+  leverage_percentage: parsedData.q130_leverage_percentage ?? "",
+  leverage_category: parsedData.q137_leverage_category ?? "",
+  leverage_insight: parsedData.q157_leverage_insight ?? "",
+  leverage_yns: parsedData.q179_leverage_yns ?? "",
 
-  execute_percentage: parsedData.Execute_Percentage ?? "",
-  execute_category: parsedData.Execute_Category ?? "",
-  execute_insight: parsedData.Execute_WTM ?? "",
-  execute_yns: parsedData.Execute_YNS ?? "",
+  execute_percentage: parsedData.q186_execute_percentage ?? "",
+  execute_category: parsedData.q138_execute_category ?? "",
+  execute_insight: parsedData.q158_execute_insight ?? "",
+  execute_yns: parsedData.q180_execute_yns ?? "",
 
-  final_percentage: parsedData.Final_Percentage ?? "",
-  final_summary_insight: parsedData.Final_Summary_WTM ?? "",
-  final_summary_yns: parsedData.Final_Summary_YNS ?? "",
+  final_percentage: parsedData.q133_final_percentage ?? "",
+  final_summary_insight: parsedData.q159_final_summary_insight ?? "",
+  final_summary_yns: parsedData.q188_final_summary_yns ?? "",
 
   submission_date: new Date().toISOString(),
 }
