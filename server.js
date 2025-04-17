@@ -12,7 +12,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 app.post("/", async (req, res) => {
   const payload = req.body
-  console.log("📩 Incoming Submission:", JSON.stringify(payload, null, 2))
+  console.log("📥 Incoming Submission:", req.body?.rawRequest || req.body || "No body received");
+
 
   // 🌿 Extract values
   const raw = payload.rawRequest || ""
