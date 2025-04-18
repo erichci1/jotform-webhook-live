@@ -11,7 +11,9 @@ app.use(bodyParser.json()) // optionally keep for JSON payloads
 
 const SUPABASE_URL = "https://srkuufwbwqipohhcmqmu.supabase.co"
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNya3V1Zndid3FpcG9oaGNtcW11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxMTA1MDYsImV4cCI6MjA1ODY4NjUwNn0.XuN_eG8tEl1LQp84XK1HwwksWsyc41L_xeqbxh-fM-8"
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)app.post("/", async (req, res) => {
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+app.post("/", async (req, res) => {
   const payload = req.body
   console.log("📥 Incoming Submission:", req.body?.rawRequest || req.body || "No body received");
 
