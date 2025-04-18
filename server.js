@@ -1,10 +1,10 @@
 import express from "express"
-import bodyParser from "body-parser"
+import multer from "multer"
 import { createClient } from "@supabase/supabase-js"
 
 const app = express()
-app.use(bodyParser.urlencoded({ extended: true }))
-app.use(bodyParser.json())
+const upload = multer()
+app.use(upload.none()) // ✅ handles multipart/form-data from Jotform
 
 const supabase = createClient(
   "https://srkuufwbwqipohhcmqmu.supabase.co",
