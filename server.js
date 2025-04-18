@@ -2,25 +2,22 @@ import express from "express"
 import multer from "multer"
 import { createClient } from "@supabase/supabase-js"
 
-const upload = multer()
 const app = express()
+const upload = multer() // handles multipart/form-data
 
 const supabase = createClient(
   "https://srkuufwbwqipohhcmqmu.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNya3V1Zndid3FpcG9oaGNtcW11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxMTA1MDYsImV4cCI6MjA1ODY4NjUwNn0.XuN_eG8tEl1LQp84XK1HwwksWsyc41L_xeqbxh-fM-8"
 )
 
-app.post("/", upload.any(), async (req, res) => {
-  // Reconstruct payload from multipart
-  const payload = {}
-  req.files?.forEach(file => {
-    payload[file.fieldname] = file.buffer.toString()
-  })
+app.post("/", upload.none(), async (req, res) => {
+  const payload = req.body
+  const keys = Object.keys(payload || {})
+  console.log("🔑 Keys Received:", keys)
 
   const user_id = payload.q189_user_id
   const email = payload.q12_email
 
-  console.log("🔑 Keys Received:", Object.keys(payload))
   console.log("🧠 user_id extracted:", user_id)
   console.log("📧 email extracted:", email)
 
