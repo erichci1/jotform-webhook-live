@@ -1,26 +1,23 @@
-// 🌱 Updated server.js with fallback logic for missing user_id
+// 🌱 Webhook Server: Stable version with safe logging and insertion
 import express from "express"
 import bodyParser from "body-parser"
 import { createClient } from "@supabase/supabase-js"
 
 const app = express()
-
-// ✅ Fixes the rawRequest being undefined by supporting x-www-form-urlencoded
-app.use(bodyParser.urlencoded({ extended: true }))
-app.use(bodyParser.json()) // optionally keep for JSON payloads
+app.use(bodyParser.json()) // ensure body is parsed
 
 const SUPABASE_URL = "https://srkuufwbwqipohhcmqmu.supabase.co"
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNya3V1Zndid3FpcG9oaGNtcW11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxMTA1MDYsImV4cCI6MjA1ODY4NjUwNn0.XuN_eG8tEl1LQp84XK1HwwksWsyc41L_xeqbxh-fM-8"
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 app.post("/", async (req, res) => {
-  const payload = req.body
-  console.log("📥 Incoming Submission:", req.body?.rawRequest || req.body || "No body received");
+  const body = req?.body || {}
+  console.log("📥 Incoming Submission:", body.rawRequest || body || "No body received")
 
+  const raw = body.rawRequest || ""
+  const pretty = body.pretty || ""
 
-  // 🌿 Extract values
-  const raw = payload.rawRequest || ""
-  const pretty = payload.pretty || ""
   const userId = pretty.match(/user_id:([a-f0-9\-]+)/)?.[1] || null
   const email = pretty.match(/Email:([\w.@+-]+)/)?.[1] || null
 
@@ -32,14 +29,14 @@ app.post("/", async (req, res) => {
     return res.status(400).send("Missing user_id or email")
   }
 
-  // ✅ Check if row already exists for this user
+  // 🌱 Check if row exists
   const { data: existingRow, error: fetchError } = await supabase
     .from("assessment_results")
     .select("id")
     .eq("user_id", userId)
     .single()
 
-  if (fetchError) {
+  if (fetchError && fetchError.code !== "PGRST116") {
     console.warn("⚠️ Lookup error:", fetchError.message)
   }
 
@@ -55,7 +52,6 @@ app.post("/", async (req, res) => {
     }
   }
 
-  // 🌿 Update the row with full payload now
   const { error: updateError } = await supabase
     .from("assessment_results")
     .update({
