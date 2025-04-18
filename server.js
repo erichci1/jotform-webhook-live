@@ -1,22 +1,30 @@
 import express from "express"
+import bodyParser from "body-parser"
 import multer from "multer"
 import { createClient } from "@supabase/supabase-js"
 
-// Create Express App
 const app = express()
-
-// Parse multipart/form-data using multer
 const upload = multer()
 
-// Supabase Client
+// Middleware to log headers and body
+app.use((req, res, next) => {
+  console.log("🧵 Headers:", req.headers)
+  next()
+})
+
+// Parse urlencoded and JSON
+app.use(bodyParser.urlencoded({ extended: true }))
+app.use(bodyParser.json())
+app.use(upload.none()) // for multipart/form-data
+
 const supabase = createClient(
   "https://srkuufwbwqipohhcmqmu.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNya3V1Zndid3FpcG9oaGNtcW11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxMTA1MDYsImV4cCI6MjA1ODY4NjUwNn0.XuN_eG8tEl1LQp84XK1HwwksWsyc41L_xeqbxh-fM-8"
 )
 
-app.post("/", upload.none(), async (req, res) => {
-  const payload = req.body
-  const keys = Object.keys(payload || {})
+app.post("/", async (req, res) => {
+  const payload = req.body || {}
+  const keys = Object.keys(payload)
   console.log("🔑 Keys Received:", keys)
 
   const user_id = payload.q189_user_id
@@ -53,7 +61,7 @@ app.post("/", upload.none(), async (req, res) => {
     final_percentage: payload.final_percentage || null,
     final_summary_insight: payload.final_summary_insight || null,
     final_summary_yns: payload.final_summary_yns || null,
-    pretty_summary: `Name: ${payload.name}, Email:${email}, user_id:${user_id}`,
+    pretty_summary: `Name: ${payload.name || "N/A"}, Email: ${email}, user_id: ${user_id}`,
     raw_submission: JSON.stringify(payload),
     status: "submitted"
   }
@@ -67,12 +75,11 @@ app.post("/", upload.none(), async (req, res) => {
     return res.status(500).send("Database insert failed")
   }
 
-  console.log("✅ Assessment stored successfully:", user_id)
+  console.log("✅ Assessment stored successfully for:", user_id)
   return res.status(200).send("Stored successfully")
 })
 
-// Start server
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
-  console.log(`🚀 Webhook server running on http://localhost:${PORT}`)
+  console.log(`🚀 Server running on http://localhost:${PORT}`)
 })
