@@ -6,25 +6,20 @@ import { createClient } from "@supabase/supabase-js"
 const app = express()
 const upload = multer()
 
-// Middleware to log headers and body
-app.use((req, res, next) => {
-  console.log("🧵 Headers:", req.headers)
-  next()
-})
-
-// Parse urlencoded and JSON
-app.use(bodyParser.urlencoded({ extended: true }))
-app.use(bodyParser.json())
-app.use(upload.none()) // for multipart/form-data
-
+// Supabase setup
 const supabase = createClient(
   "https://srkuufwbwqipohhcmqmu.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNya3V1Zndid3FpcG9oaGNtcW11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxMTA1MDYsImV4cCI6MjA1ODY4NjUwNn0.XuN_eG8tEl1LQp84XK1HwwksWsyc41L_xeqbxh-fM-8"
 )
 
-app.post("/", async (req, res) => {
-  const payload = req.body || {}
-  const keys = Object.keys(payload)
+// Middleware
+app.use(bodyParser.json())
+app.use(bodyParser.urlencoded({ extended: true }))
+
+// ✅ Main route with multer to handle multipart/form-data
+app.post("/", upload.none(), async (req, res) => {
+  const payload = req.body
+  const keys = Object.keys(payload || {})
   console.log("🔑 Keys Received:", keys)
 
   const user_id = payload.q189_user_id
@@ -61,12 +56,12 @@ app.post("/", async (req, res) => {
     final_percentage: payload.final_percentage || null,
     final_summary_insight: payload.final_summary_insight || null,
     final_summary_yns: payload.final_summary_yns || null,
-    pretty_summary: `Name: ${payload.name || "N/A"}, Email: ${email}, user_id: ${user_id}`,
+    pretty_summary: `Name: ${payload.name}, Email: ${email}, user_id: ${user_id}`,
     raw_submission: JSON.stringify(payload),
     status: "submitted"
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("assessment_results")
     .upsert(formData, { onConflict: ["user_id"], ignoreDuplicates: false })
 
@@ -75,7 +70,7 @@ app.post("/", async (req, res) => {
     return res.status(500).send("Database insert failed")
   }
 
-  console.log("✅ Assessment stored successfully for:", user_id)
+  console.log("✅ Assessment stored successfully:", user_id)
   return res.status(200).send("Stored successfully")
 })
 
