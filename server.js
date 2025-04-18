@@ -1,30 +1,26 @@
 import express from "express"
-import bodyParser from "body-parser"
 import multer from "multer"
 import { createClient } from "@supabase/supabase-js"
 
-const app = express()
 const upload = multer()
+const app = express()
 
-// Supabase setup
 const supabase = createClient(
   "https://srkuufwbwqipohhcmqmu.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNya3V1Zndid3FpcG9oaGNtcW11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxMTA1MDYsImV4cCI6MjA1ODY4NjUwNn0.XuN_eG8tEl1LQp84XK1HwwksWsyc41L_xeqbxh-fM-8"
 )
 
-// Middleware
-app.use(bodyParser.json())
-app.use(bodyParser.urlencoded({ extended: true }))
-
-// ✅ Main route with multer to handle multipart/form-data
-app.post("/", upload.none(), async (req, res) => {
-  const payload = req.body
-  const keys = Object.keys(payload || {})
-  console.log("🔑 Keys Received:", keys)
+app.post("/", upload.any(), async (req, res) => {
+  // Reconstruct payload from multipart
+  const payload = {}
+  req.files?.forEach(file => {
+    payload[file.fieldname] = file.buffer.toString()
+  })
 
   const user_id = payload.q189_user_id
   const email = payload.q12_email
 
+  console.log("🔑 Keys Received:", Object.keys(payload))
   console.log("🧠 user_id extracted:", user_id)
   console.log("📧 email extracted:", email)
 
@@ -56,12 +52,12 @@ app.post("/", upload.none(), async (req, res) => {
     final_percentage: payload.final_percentage || null,
     final_summary_insight: payload.final_summary_insight || null,
     final_summary_yns: payload.final_summary_yns || null,
-    pretty_summary: `Name: ${payload.name}, Email: ${email}, user_id: ${user_id}`,
+    pretty_summary: `Name: ${payload.name}, Email:${email}, user_id:${user_id}`,
     raw_submission: JSON.stringify(payload),
     status: "submitted"
   }
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from("assessment_results")
     .upsert(formData, { onConflict: ["user_id"], ignoreDuplicates: false })
 
