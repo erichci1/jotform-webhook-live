@@ -4,25 +4,27 @@ import { createClient } from "@supabase/supabase-js"
 
 const app = express()
 
-// Middleware
+// Middleware for form and JSON payloads
 app.use(bodyParser.urlencoded({ extended: true }))
 app.use(bodyParser.json())
 
 const SUPABASE_URL = "https://srkuufwbwqipohhcmqmu.supabase.co"
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNya3V1Zndid3FpcG9oaGNtcW11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxMTA1MDYsImV4cCI6MjA1ODY4NjUwNn0.XuN_eG8tEl1LQp84XK1HwwksWsyc41L_xeqbxh-fM-8"
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNya3V1Zndid3FpcG9oaGNtcW11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxMTA1MDYsImV4cCI6MjA1ODY4NjUwNn0.XuN_eG8tEl1LQp84XK1HwwksWsyc41L_xeqbxh-fM-8"
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 app.post("/", async (req, res) => {
-  const payload = req.body || {}
-  console.log("📦 Final Payload:", payload)
+  // Debug logging to trace Jotform payload
+  console.log("🔍 Request Headers:", req.headers)
+  console.log("📦 Payload Type:", typeof req.body)
+  console.log("📦 Raw Payload:", req.body)
 
-  // Log all keys to debug form input
-  console.log("🧩 Full keys received:", Object.keys(payload))
+  const keys = Object.keys(req.body || {})
+  console.log("🗂️ Keys Received:", keys)
 
-  // Pull from form field keys (make sure Jotform unique names are correct)
-  const userId = payload["q189_user_id"] || null
-  const email = payload["q12_email"] || null
+  const userId = req.body?.q189_user_id || null
+  const email = req.body?.q12_email || null
 
   console.log("🧠 user_id received:", userId)
   console.log("📧 email parsed:", email)
@@ -32,7 +34,7 @@ app.post("/", async (req, res) => {
     return res.status(400).send("Missing user_id or email")
   }
 
-  // Check for existing user
+  // Check if row already exists
   const { data: existingRow, error: fetchError } = await supabase
     .from("assessment_results")
     .select("id")
@@ -43,35 +45,34 @@ app.post("/", async (req, res) => {
     console.warn("⚠️ Lookup error:", fetchError.message)
   }
 
-  // Insert row if missing
   if (!existingRow) {
-    console.log("🌱 No row found. Inserting seed for:", userId)
+    console.log("🌱 Inserting seed row for:", userId)
     const { error: insertError } = await supabase
       .from("assessment_results")
       .insert([{ user_id: userId, email, status: "seed_planted" }])
 
     if (insertError) {
-      console.error("❌ Failed to insert row:", insertError.message)
-      return res.status(500).send("Unable to insert seed")
+      console.error("❌ Insert failed:", insertError.message)
+      return res.status(500).send("Insert failed")
     }
   }
 
-  // Update record with full payload
+  // Update the row with full form submission
   const { error: updateError } = await supabase
     .from("assessment_results")
     .update({
-      raw_submission: JSON.stringify(payload),
+      raw_submission: JSON.stringify(req.body),
       pretty_summary: `Submitted by ${email}`,
       status: "submitted",
     })
     .eq("user_id", userId)
 
   if (updateError) {
-    console.error("❌ Update error:", updateError.message)
+    console.error("❌ Update failed:", updateError.message)
     return res.status(500).send("Update failed")
   }
 
-  console.log("✅ Submission stored for:", userId)
+  console.log("✅ Successfully stored assessment for:", userId)
   return res.status(200).send("Assessment stored successfully")
 })
 
