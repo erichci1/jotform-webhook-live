@@ -1,12 +1,9 @@
 import express from "express"
-import bodyParser from "body-parser"
+import multer from "multer"
 import { createClient } from "@supabase/supabase-js"
 
 const app = express()
-
-// Middleware for form and JSON payloads
-app.use(bodyParser.urlencoded({ extended: true }))
-app.use(bodyParser.json())
+const upload = multer() // This handles multipart/form-data
 
 const SUPABASE_URL = "https://srkuufwbwqipohhcmqmu.supabase.co"
 const SUPABASE_ANON_KEY =
@@ -14,17 +11,13 @@ const SUPABASE_ANON_KEY =
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-app.post("/", async (req, res) => {
-  // Debug logging to trace Jotform payload
-  console.log("🔍 Request Headers:", req.headers)
-  console.log("📦 Payload Type:", typeof req.body)
-  console.log("📦 Raw Payload:", req.body)
+// Accept multipart/form-data
+app.post("/", upload.none(), async (req, res) => {
+  console.log("📦 Final Payload:", req.body)
+  console.log("🗂️ Keys Received:", Object.keys(req.body))
 
-  const keys = Object.keys(req.body || {})
-  console.log("🗂️ Keys Received:", keys)
-
-  const userId = req.body?.q189_user_id || null
-  const email = req.body?.q12_email || null
+  const userId = req.body.q189_user_id
+  const email = req.body.q12_email
 
   console.log("🧠 user_id received:", userId)
   console.log("📧 email parsed:", email)
@@ -34,7 +27,7 @@ app.post("/", async (req, res) => {
     return res.status(400).send("Missing user_id or email")
   }
 
-  // Check if row already exists
+  // Check if row exists
   const { data: existingRow, error: fetchError } = await supabase
     .from("assessment_results")
     .select("id")
@@ -46,7 +39,6 @@ app.post("/", async (req, res) => {
   }
 
   if (!existingRow) {
-    console.log("🌱 Inserting seed row for:", userId)
     const { error: insertError } = await supabase
       .from("assessment_results")
       .insert([{ user_id: userId, email, status: "seed_planted" }])
@@ -57,7 +49,6 @@ app.post("/", async (req, res) => {
     }
   }
 
-  // Update the row with full form submission
   const { error: updateError } = await supabase
     .from("assessment_results")
     .update({
