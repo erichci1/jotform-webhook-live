@@ -3,24 +3,27 @@ import bodyParser from "body-parser"
 import { createClient } from "@supabase/supabase-js"
 
 const app = express()
+
+// ✅ Middleware to parse form submissions
 app.use(bodyParser.urlencoded({ extended: true }))
 app.use(bodyParser.json())
 
+// ✅ Supabase setup
 const SUPABASE_URL = "https://srkuufwbwqipohhcmqmu.supabase.co"
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNya3V1Zndid3FpcG9oaGNtcW11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMxMTA1MDYsImV4cCI6MjA1ODY4NjUwNn0.XuN_eG8tEl1LQp84XK1HwwksWsyc41L_xeqbxh-fM-8"
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 app.post("/", async (req, res) => {
-  const payload = req.body
-
+  const payload = req.body || {}
   console.log("📥 Incoming Submission:", payload)
 
-  const raw = JSON.stringify(payload)
-  const pretty = payload.pretty || raw
+  // ✅ Fallback for payload.pretty — parse raw if needed
+  const pretty = payload.pretty || JSON.stringify(payload) || ""
+  const raw = payload.rawRequest || JSON.stringify(payload) || ""
 
-  const userId = payload.user_id || (pretty.match(/user_id:([a-f0-9\-]+)/)?.[1] || null)
-  const email = payload.email || (pretty.match(/Email:([\w.@+-]+)/)?.[1] || null)
+  // ✅ Parse user_id and email from the pretty string
+  const userId = pretty.match(/user_id:([a-f0-9\-]+)/)?.[1] || null
+  const email = pretty.match(/Email:([\w.@+-]+)/)?.[1] || null
 
   console.log("🧠 user_id received:", userId)
   console.log("📧 email parsed:", email)
@@ -30,6 +33,7 @@ app.post("/", async (req, res) => {
     return res.status(400).send("Missing user_id or email")
   }
 
+  // ✅ Check if row already exists for this user
   const { data: existingRow, error: fetchError } = await supabase
     .from("assessment_results")
     .select("id")
@@ -40,6 +44,7 @@ app.post("/", async (req, res) => {
     console.warn("⚠️ Lookup error:", fetchError.message)
   }
 
+  // ✅ Insert new row if none exists
   if (!existingRow) {
     console.log("🌱 No row found. Inserting new seed for user_id:", userId)
     const { error: insertError } = await supabase
@@ -52,6 +57,7 @@ app.post("/", async (req, res) => {
     }
   }
 
+  // ✅ Update the row with full submission
   const { error: updateError } = await supabase
     .from("assessment_results")
     .update({
