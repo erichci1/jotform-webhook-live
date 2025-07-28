@@ -1,66 +1,96 @@
-// server.js
+// server.cjs
 const express = require("express");
 const bodyParser = require("body-parser");
 const { createClient } = require("@supabase/supabase-js");
 
-const app = express();
-const port = process.env.PORT || 3000;
+// ─── CONFIG ──────────────────────────────────────────────────────────────────────
+const app  = express();
+const port = process.env.PORT || 10000;
 
-// Supabase credentials (use Service Role key for server inserts)
-const supabaseUrl = "https://srkuufwbwqipohhcmqmu.supabase.co";
-const supabaseServiceRoleKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNya3V1Zndid3FpcG9oaGNtcW11Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0MzExMDUwNiwiZXhwIjoyMDU4Njg2NTA2fQ.xC-gC3izZAqAtQVXEFp6h4RbuT5LFBKnrqasRmvtTEU";
-const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+const SUPABASE_URL              = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in env");
+  process.exit(1);
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+// ─── MIDDLEWARE ────────────────────────────────────────────────────────────────────
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
+// ─── ROUTE ─────────────────────────────────────────────────────────────────────────
 app.post("/jotform-webhook", async (req, res) => {
   try {
-    const data = req.body;
+    // 1) JotForm nests the entire submission under `rawRequest`
+    const rawJson = req.body.rawRequest || "{}";
+    const raw     = JSON.parse(rawJson);
+    console.log("🔍 rawRequest JSON:", raw);
 
-    // Example mapping — adjust keys to match your actual Jotform field IDs
+    const a = raw.answers || {};
+
+    // 2) Pull out email & user_id by their question IDs
+    const email   = a["q12_email"]?.answer     ?? null;
+    const user_id = a["q189_user_id"]?.answer  ?? null;
+
+    if (!email || !user_id) {
+      console.warn("⚠️ Missing user_id or email:", { user_id, email });
+      return res.status(400).send("Missing user_id or email");
+    }
+
+    // 3) Build the payload, question‑by‑question
     const payload = {
-      user_id: data.answers["user_id"]?.answer || null,
-      submission_date: data.submission_date || new Date().toISOString(),
-      name: data.answers["name"]?.answer || "",
-      email: data.answers["email"]?.answer || "",
-      activate_percentage: data.answers["activate_percentage"]?.answer || "",
-      activate_category: data.answers["activate_category"]?.answer || "",
-      activate_wtm: data.answers["activate_wtm"]?.answer || "",
-      activate_yns: data.answers["activate_yns"]?.answer || "",
-      build_percentage: data.answers["build_percentage"]?.answer || "",
-      build_category: data.answers["build_category"]?.answer || "",
-      build_wtm: data.answers["build_wtm"]?.answer || "",
-      build_yns: data.answers["build_yns"]?.answer || "",
-      leverage_percentage: data.answers["leverage_percentage"]?.answer || "",
-      leverage_category: data.answers["leverage_category"]?.answer || "",
-      leverage_wtm: data.answers["leverage_wtm"]?.answer || "",
-      leverage_yns: data.answers["leverage_yns"]?.answer || "",
-      execute_percentage: data.answers["execute_percentage"]?.answer || "",
-      execute_category: data.answers["execute_category"]?.answer || "",
-      execute_wtm: data.answers["execute_wtm"]?.answer || "",
-      execute_yns: data.answers["execute_yns"]?.answer || "",
-      final_percentage: data.answers["final_percentage"]?.answer || "",
-      final_summary_wtm: data.answers["final_summary_wtm"]?.answer || "",
-      final_summary_yns: data.answers["final_summary_yns"]?.answer || ""
+      user_id,
+      email,
+      submission_date: raw.submissionDate || new Date().toISOString(),
+
+      activate_percentage: a["q118_activate_percentage"]?.answer ?? null,
+      activate_category:   a["q118_activate_category"]?.answer   ?? null,
+      activate_wtm:        a["q118_activate_wtm"]?.answer        ?? null,
+      activate_yns:        a["q118_activate_yns"]?.answer        ?? null,
+
+      build_percentage:    a["q120_build_percentage"]?.answer    ?? null,
+      build_category:      a["q120_build_category"]?.answer      ?? null,
+      build_wtm:           a["q120_build_wtm"]?.answer           ?? null,
+      build_yns:           a["q120_build_yns"]?.answer           ?? null,
+
+      leverage_percentage: a["q167_leverage_percentage"]?.answer ?? null,
+      leverage_category:   a["q167_leverage_category"]?.answer   ?? null,
+      leverage_wtm:        a["q167_leverage_wtm"]?.answer        ?? null,
+      leverage_yns:        a["q167_leverage_yns"]?.answer        ?? null,
+
+      execute_percentage:  a["q180_execute_percentage"]?.answer  ?? null,
+      execute_category:    a["q180_execute_category"]?.answer    ?? null,
+      execute_wtm:         a["q180_execute_wtm"]?.answer         ?? null,
+      execute_yns:         a["q180_execute_yns"]?.answer         ?? null,
+
+      final_percentage:    a["q158_final_percentage"]?.answer    ?? null,
+      final_summary_wtm:   a["q158_final_summary_wtm"]?.answer   ?? null,
+      final_summary_yns:   a["q158_final_summary_yns"]?.answer   ?? null,
     };
 
+    console.log("🚀 Inserting payload:", payload);
+
+    // 4) Write to Supabase
     const { error } = await supabase
       .from("assessment_results")
       .insert([payload]);
 
     if (error) {
-      console.error("Supabase insert error:", error);
+      console.error("❌ Supabase error:", error);
       return res.status(500).send("Insert failed");
     }
 
-    return res.status(200).send("Webhook processed and inserted.");
+    res.status(200).send("Inserted!");
   } catch (err) {
-    console.error("Webhook error:", err);
-    return res.status(500).send("Server error");
+    console.error("🔥 Handler error:", err);
+    res.status(500).send("Server error");
   }
 });
 
+// ─── START SERVER ─────────────────────────────────────────────────────────────────
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`📡 Webhook listening on port ${port}`);
 });
