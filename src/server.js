@@ -1,74 +1,65 @@
+// server.js
 import express from "express";
-import { json, urlencoded } from "body-parser";
+import bodyParser from "body-parser";
+import multer from "multer";
 import { createClient } from "@supabase/supabase-js";
+import dotenv from "dotenv";
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+const upload = multer();
 
-// keep the raw body so we can inspect it
-app.use(
-  json({
-    verify: (req, _res, buf) => {
-      // stash a copy of the raw request for debugging
-      req.rawBody = buf.toString();
-    },
-  })
-);
-app.use(
-  urlencoded({
-    extended: true,
-    verify: (req, _res, buf) => {
-      // if Jotform posts as form‑urlencoded, capture that raw too
-      req.rawBody = buf.toString();
-    },
-  })
+// 1) Body‐parsing for JSON, URL‐encoded, and multipart form‐data
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(upload.none());
+
+// 2) Supabase client (you should store these in your .env!)
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!
 );
 
-const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+// 3) Webhook endpoint
+app.post("/", async (req, res) => {
+  // 3a) Log the raw incoming payload so we can see every key
+  console.log("📥 JotForm sent us:", JSON.stringify(req.body, null, 2));
 
-app.post("/jotform-webhook", async (req, res) => {
-  // 1) raw
-  console.log("⏺ Raw payload:", req.rawBody);
-  // 2) parsed
-  console.log("🔑 Parsed body object:", req.body);
+  // 3b) Grab the user+email fields after you confirm what they’re called
+  const user_id   = req.body.q189_user_id;
+  const email     = req.body.q12_email;
 
-  // now you can safely destructure
-  const {
-    q12_email,
-    q189_user_id,
-    q118_activate_percentage,
-    q119_activate_category,
-    // …etc
-  } = req.body;
-
-  if (!q189_user_id || !q12_email) {
-    console.warn("⚠️ Missing user_id or email:", {
-      user_id: q189_user_id,
-      email: q12_email,
-    });
+  if (!user_id || !email) {
+    console.warn("⚠️ Missing user_id or email:", { user_id, email });
     return res.status(400).send("Missing user_id or email");
   }
 
+  // 3c) Build out your payload – expand with all your q### fields
   const payload = {
-    user_id: q189_user_id,
-    email: q12_email,
-    activate_percentage: q118_activate_percentage,
-    activate_category: q119_activate_category,
-    // …map the rest…
+    user_id,
+    email,
+    activate_percentage:   req.body.q118_activate_percentage   || null,
+    activate_category:     req.body.q119_activate_category     || null,
+    // …and so on for all your fields…
+    submission_date: new Date().toISOString(),
   };
 
-  const { error } = await supabase.from("assessment_results").insert([payload]);
+  // 4) Insert into Supabase
+  const { error } = await supabase
+    .from("assessment_results")
+    .insert([payload]);
+
   if (error) {
     console.error("❌ Supabase insert error:", error);
     return res.status(500).send("Insert failed");
   }
 
-  console.log("✅ Inserted payload:", payload);
-  res.status(200).send("Webhook processed and inserted.");
+  console.log("✅ Inserted:", payload);
+  res.status(200).send("OK");
 });
 
+// 5) Kick off
 app.listen(port, () => {
   console.log(`🚀 Webhook server listening on port ${port}`);
 });
