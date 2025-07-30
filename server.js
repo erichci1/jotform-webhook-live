@@ -1,29 +1,50 @@
-// server.js
-require("dotenv").config();
+import express from "express";
+import bodyParser from "body-parser";
+import { createClient } from "@supabase/supabase-js";
+import dotenv from "dotenv";
 
-const express    = require("express");
-const bodyParser = require("body-parser");
-const multer     = require("multer");
-const { createClient } = require("@supabase/supabase-js");
+// load .env
+dotenv.config();
 
-const app  = express();
-const port = process.env.PORT || 3000;
+const app = express();
+const PORT = Number(process.env.PORT || 3000);
 
-// parse JSON, form‑encoded, and multipart "none"
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(multer().none());
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.error("🚨 SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required in .env");
+  process.exit(1);
+}
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// parse both JSON and URL-encoded bodies
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
 app.post("/", async (req, res) => {
   try {
-    console.log("📥 Received payload:", req.body);
+    console.log("🔍 raw form payload:", req.body);
 
-    // JotForm field → local var
+    // 1) grab the JotForm‑wrapped blob
+    const raw = req.body.rawRequest;
+    if (!raw) {
+      console.warn("✋ missing rawRequest");
+      return res.status(400).send("Missing rawRequest");
+    }
+
+    // 2) parse it
+    let form;
+    try {
+      form = JSON.parse(raw);
+    } catch (err) {
+      console.error("‼️ bad JSON in rawRequest:", err);
+      return res.status(400).send("Bad rawRequest JSON");
+    }
+    console.log("✅ parsed form:", form);
+
+    // 3) extract all q### fields
     const {
       q189_user_id: user_id,
       q12_email:    email,
@@ -47,11 +68,11 @@ app.post("/", async (req, res) => {
       q134_final_percentage,
       q135_final_summary_wtm,
       q136_final_summary_yns
-    } = req.body;
+    } = form;
 
-    // reconstruct name from JotForm's Name widget
+    // build a friendly "name" string
     let name = "";
-    if (rawName && typeof rawName === "object") {
+    if (rawName && rawName.first) {
       name = `${rawName.first||""} ${rawName.last||""}`.trim();
     }
 
@@ -65,27 +86,28 @@ app.post("/", async (req, res) => {
       submission_date: new Date().toISOString(),
       name,
       email,
-      activate_percentage:  q118_activate_percentage  || "",
-      activate_category:    q119_activate_category    || "",
-      activate_wtm:         q120_activate_wtm         || "",
-      activate_yns:         q121_activate_yns         || "",
-      build_percentage:     q122_build_percentage     || "",
-      build_category:       q123_build_category       || "",
-      build_wtm:            q124_build_wtm            || "",
-      build_yns:            q125_build_yns            || "",
-      leverage_percentage:  q126_leverage_percentage  || "",
-      leverage_category:    q127_leverage_category    || "",
-      leverage_wtm:         q128_leverage_wtm         || "",
-      leverage_yns:         q129_leverage_yns         || "",
-      execute_percentage:   q130_execute_percentage   || "",
-      execute_category:     q131_execute_category     || "",
-      execute_wtm:          q132_execute_wtm          || "",
-      execute_yns:          q133_execute_yns          || "",
-      final_percentage:     q134_final_percentage     || "",
-      final_summary_wtm:    q135_final_summary_wtm    || "",
-      final_summary_yns:    q136_final_summary_yns    || ""
+      activate_percentage:  q118_activate_percentage  ?? "",
+      activate_category:    q119_activate_category    ?? "",
+      activate_wtm:         q120_activate_wtm         ?? "",
+      activate_yns:         q121_activate_yns         ?? "",
+      build_percentage:     q122_build_percentage     ?? "",
+      build_category:       q123_build_category       ?? "",
+      build_wtm:            q124_build_wtm            ?? "",
+      build_yns:            q125_build_yns            ?? "",
+      leverage_percentage:  q126_leverage_percentage  ?? "",
+      leverage_category:    q127_leverage_category    ?? "",
+      leverage_wtm:         q128_leverage_wtm         ?? "",
+      leverage_yns:         q129_leverage_yns         ?? "",
+      execute_percentage:   q130_execute_percentage   ?? "",
+      execute_category:     q131_execute_category     ?? "",
+      execute_wtm:          q132_execute_wtm          ?? "",
+      execute_yns:          q133_execute_yns          ?? "",
+      final_percentage:     q134_final_percentage     ?? "",
+      final_summary_wtm:    q135_final_summary_wtm    ?? "",
+      final_summary_yns:    q136_final_summary_yns    ?? ""
     };
 
+    console.log("📤 inserting payload:", payload);
     const { error } = await supabase
       .from("assessment_results_2")
       .insert([payload]);
@@ -95,14 +117,15 @@ app.post("/", async (req, res) => {
       return res.status(500).send("Insert failed");
     }
 
-    console.log("✅ Inserted:", payload);
-    res.status(200).send("OK");
+    console.log("✅ Insert succeeded");
+    return res.status(200).send("OK");
+
   } catch (err) {
-    console.error("❌ Server error:", err);
-    res.status(500).send("Internal Server Error");
+    console.error("❌ Uncaught server error:", err);
+    return res.status(500).send("Internal Server Error");
   }
 });
 
-app.listen(port, () => {
-  console.log(`🚀 Listening on port ${port}`);
+app.listen(PORT, () => {
+  console.log(`🚀 Running on port ${PORT}`);
 });
