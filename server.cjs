@@ -1,54 +1,39 @@
 // server.cjs
-
 require("dotenv").config();
+
 const express    = require("express");
-const bodyParser = require("body-parser");
+const multer     = require("multer");
 const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-//––– validate .env
+// Multer will parse multipart/form‑data bodies into req.body
+app.use(multer().none());
+
+// You can still support JSON / URL‑encoded (in case you want to test with curl)
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+//––– Supabase
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("🚨 Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env");
+  console.error("🚨 Missing SUPABASE_* env vars");
   process.exit(1);
 }
-
-//––– supabase client
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-//––– body parsing
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
-
 app.post("/", async (req, res) => {
   console.log("––––––––––––––––––––––––––––––––––––");
   console.log("📥 Received payload:", req.body);
 
-  // JotForm puts your entire submission JSON into `rawRequest`
-  const raw = req.body.rawRequest;
-  if (!raw) {
-    console.warn("⚠️ Missing rawRequest");
-    return res.status(400).send("Missing rawRequest");
-  }
-
-  let form;
-  try {
-    form = JSON.parse(raw);
-  } catch (err) {
-    console.error("❌ rawRequest JSON parse error:", err);
-    return res.status(400).send("Bad rawRequest JSON");
-  }
-  console.log("✅ Parsed submission:", form);
-
-  // pull out your key fields (match these q### to your actual form)
+  // pull the form fields directly off req.body
   const {
-    q189_user_id: user_id,
-    q12_email:    email,
-    q11_Name:     nameObj,
+    q189_user_id:              user_id,
+    q12_email:                 email,
+    q11_Name:                  nameObj,
     q118_activate_percentage,
     q119_activate_category,
     q120_activate_wtm,
@@ -68,17 +53,18 @@ app.post("/", async (req, res) => {
     q134_final_percentage,
     q135_final_summary_wtm,
     q136_final_summary_yns
-  } = form;
+  } = req.body;
 
-  // build a single name string
-  let name = "";
-  if (nameObj && (nameObj.first || nameObj.last)) {
-    name = `${nameObj.first || ""} ${nameObj.last || ""}`.trim();
-  }
-
+  // basic validation
   if (!user_id || !email) {
     console.warn("⚠️ Missing user_id or email:", { user_id, email });
     return res.status(400).send("Missing user_id or email");
+  }
+
+  // build a flat name if your Name field is an object
+  let name = "";
+  if (nameObj && (nameObj.first || nameObj.last)) {
+    name = `${nameObj.first || ""} ${nameObj.last || ""}`.trim();
   }
 
   const payload = {
@@ -118,7 +104,7 @@ app.post("/", async (req, res) => {
   }
 
   console.log("✅ Insert succeeded");
-  return res.status(200).send("OK");
+  res.status(200).send("OK");
 });
 
 app.listen(PORT, () => {
