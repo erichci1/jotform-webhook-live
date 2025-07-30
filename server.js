@@ -1,131 +1,66 @@
-import express from "express";
-import bodyParser from "body-parser";
-import { createClient } from "@supabase/supabase-js";
-import dotenv from "dotenv";
+// server.js
+require('dotenv').config();
 
-// load .env
-dotenv.config();
+const express = require('express');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-const PORT = Number(process.env.PORT || 3000);
+const PORT = process.env.PORT || 10000;
 
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("🚨 SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required in .env");
-  process.exit(1);
-}
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// parse both JSON and URL-encoded bodies
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-
-app.post("/", async (req, res) => {
+app.post('/', async (req, res) => {
   try {
-    console.log("🔍 raw form payload:", req.body);
+    console.log('Received payload:', req.body);
 
-    // 1) grab the JotForm‑wrapped blob
+    // JotForm sends a stringified blob of the real answers in rawRequest
     const raw = req.body.rawRequest;
-    if (!raw) {
-      console.warn("✋ missing rawRequest");
-      return res.status(400).send("Missing rawRequest");
-    }
+    const data = raw ? JSON.parse(raw) : req.body;
 
-    // 2) parse it
-    let form;
-    try {
-      form = JSON.parse(raw);
-    } catch (err) {
-      console.error("‼️ bad JSON in rawRequest:", err);
-      return res.status(400).send("Bad rawRequest JSON");
-    }
-    console.log("✅ parsed form:", form);
-
-    // 3) extract all q### fields
-    const {
-      q189_user_id: user_id,
-      q12_email:    email,
-      q11_Name:     rawName,
-      q118_activate_percentage,
-      q119_activate_category,
-      q120_activate_wtm,
-      q121_activate_yns,
-      q122_build_percentage,
-      q123_build_category,
-      q124_build_wtm,
-      q125_build_yns,
-      q126_leverage_percentage,
-      q127_leverage_category,
-      q128_leverage_wtm,
-      q129_leverage_yns,
-      q130_execute_percentage,
-      q131_execute_category,
-      q132_execute_wtm,
-      q133_execute_yns,
-      q134_final_percentage,
-      q135_final_summary_wtm,
-      q136_final_summary_yns
-    } = form;
-
-    // build a friendly "name" string
-    let name = "";
-    if (rawName && rawName.first) {
-      name = `${rawName.first||""} ${rawName.last||""}`.trim();
-    }
-
-    if (!user_id || !email) {
-      console.warn("⚠️ Missing user_id or email:", { user_id, email });
-      return res.status(400).send("Missing user_id or email");
-    }
-
+    // map your fields — adjust q‑numbers as needed
     const payload = {
-      user_id,
-      submission_date: new Date().toISOString(),
-      name,
-      email,
-      activate_percentage:  q118_activate_percentage  ?? "",
-      activate_category:    q119_activate_category    ?? "",
-      activate_wtm:         q120_activate_wtm         ?? "",
-      activate_yns:         q121_activate_yns         ?? "",
-      build_percentage:     q122_build_percentage     ?? "",
-      build_category:       q123_build_category       ?? "",
-      build_wtm:            q124_build_wtm            ?? "",
-      build_yns:            q125_build_yns            ?? "",
-      leverage_percentage:  q126_leverage_percentage  ?? "",
-      leverage_category:    q127_leverage_category    ?? "",
-      leverage_wtm:         q128_leverage_wtm         ?? "",
-      leverage_yns:         q129_leverage_yns         ?? "",
-      execute_percentage:   q130_execute_percentage   ?? "",
-      execute_category:     q131_execute_category     ?? "",
-      execute_wtm:          q132_execute_wtm          ?? "",
-      execute_yns:          q133_execute_yns          ?? "",
-      final_percentage:     q134_final_percentage     ?? "",
-      final_summary_wtm:    q135_final_summary_wtm    ?? "",
-      final_summary_yns:    q136_final_summary_yns    ?? ""
+      user_id: data.q189_user_id ?? null,
+      email:   data.q12_email       ?? '',
+      name:    `${data.q11_name?.first ?? ''} ${data.q11_name?.last ?? ''}`.trim(),
+      activate_percentage: data.q118_activate_percentage ?? '',
+      activate_category:   data.q119_activate_category   ?? '',
+      // …repeat for all the other q### fields…
+      submission_date: data.submissionDate ?? new Date().toISOString(),
     };
 
-    console.log("📤 inserting payload:", payload);
+    console.log('Mapped payload:', payload);
+
+    if (!payload.user_id || !payload.email) {
+      console.warn('Missing user_id or email:', {
+        user_id: payload.user_id,
+        email:   payload.email,
+      });
+      return res.status(400).send('Missing user_id or email');
+    }
+
     const { error } = await supabase
-      .from("assessment_results_2")
+      .from('assessment_results')
       .insert([payload]);
 
     if (error) {
-      console.error("❌ Supabase insert error:", error);
-      return res.status(500).send("Insert failed");
+      console.error('Supabase insert error:', error);
+      return res.status(500).send('Insert failed');
     }
 
-    console.log("✅ Insert succeeded");
-    return res.status(200).send("OK");
-
+    console.log('☑️ Insert succeeded');
+    res.status(200).send('OK');
   } catch (err) {
-    console.error("❌ Uncaught server error:", err);
-    return res.status(500).send("Internal Server Error");
+    console.error('❌ Server error:', err);
+    res.status(500).send('Server error');
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Running on port ${PORT}`);
+  console.log(`🚀 Listening on port ${PORT}`);
 });
