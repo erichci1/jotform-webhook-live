@@ -1,21 +1,21 @@
 // server.cjs
 require("dotenv").config();
 
-const express    = require("express");
-const multer     = require("multer");
-const { createClient } = require("@supabase/supabase-js");
+import express from "express";            // ES‑module support
+import multer from "multer";
+import { createClient } from "@supabase/supabase-js";
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// parse multipart/form‑data (JotForm always posts as multipart)
+// only multipart/form-data, no file uploads
 app.use(multer().none());
 
-// also allow JSON / urlencoded for curl‐tests
+// also accept JSON & URL‑encoded for curl tests
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// supabase client
+// supabase
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
   console.error("🚨 Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   process.exit(1);
@@ -29,21 +29,25 @@ app.post("/", async (req, res) => {
   console.log("––––––––––––––––––––––––––––––––––––");
   console.log("📥 Received payload:", req.body);
 
-  // if JotForm wrapped everything in rawRequest, parse it:
-  let data = {};
+  // 1) Raw JotForm wrap?
+  let data;
   if (req.body.rawRequest) {
+    // unwrap twice if needed
     try {
       data = JSON.parse(req.body.rawRequest);
+      if (typeof data === "string") {
+        data = JSON.parse(data);
+      }
     } catch (err) {
       console.error("❌ rawRequest parse error:", err);
       return res.status(400).send("Bad rawRequest");
     }
   } else {
-    // otherwise assume top‑level fields
+    // 2) curl / Postman test mode
     data = req.body;
   }
 
-  // now pull your two critical fields:
+  // 3) pick off the magic fields
   const user_id = data.q189_user_id;
   const email   = data.q12_email;
 
@@ -52,11 +56,11 @@ app.post("/", async (req, res) => {
     return res.status(400).send("Missing user_id or email");
   }
 
-  // build the rest of your payload
+  // 4) map out the rest
   const payload = {
     user_id,
-    submission_date:     new Date().toISOString(),
-    name:                `${data.q11_first || ""} ${data.q11_last || ""}`.trim(),
+    submission_date:     data.submissionDate || new Date().toISOString(),
+    name:                `${data.q11_name?.first || ""} ${data.q11_name?.last || ""}`.trim(),
     email,
     activate_percentage: data.q118_activate_percentage || "",
     activate_category:   data.q119_activate_category   || "",
