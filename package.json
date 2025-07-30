@@ -1,16 +1,15 @@
 {
   "name": "jotform-webhook-live",
   "version": "1.0.0",
-  "type": "commonjs",
-  "main": "server.js",
+  "type": "commonjs",               
+  "main": "server.cjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
     "body-parser": "^2.2.0",
     "dotenv": "^16.5.0",
-    "express": "^5.1.0",
-    "multer": "^1.4.5-lts.2"
+    "express": "^5.1.0"
   }
 }
