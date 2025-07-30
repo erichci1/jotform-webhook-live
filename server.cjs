@@ -8,16 +8,16 @@ const { createClient } = require("@supabase/supabase-js");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Multer will parse multipart/form‑data bodies into req.body
+// parse multipart/form‑data (JotForm always posts as multipart)
 app.use(multer().none());
 
-// You can still support JSON / URL‑encoded (in case you want to test with curl)
+// also allow JSON / urlencoded for curl‐tests
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-//––– Supabase
+// supabase client
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("🚨 Missing SUPABASE_* env vars");
+  console.error("🚨 Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   process.exit(1);
 }
 const supabase = createClient(
@@ -29,68 +29,54 @@ app.post("/", async (req, res) => {
   console.log("––––––––––––––––––––––––––––––––––––");
   console.log("📥 Received payload:", req.body);
 
-  // pull the form fields directly off req.body
-  const {
-    q189_user_id:              user_id,
-    q12_email:                 email,
-    q11_Name:                  nameObj,
-    q118_activate_percentage,
-    q119_activate_category,
-    q120_activate_wtm,
-    q121_activate_yns,
-    q122_build_percentage,
-    q123_build_category,
-    q124_build_wtm,
-    q125_build_yns,
-    q126_leverage_percentage,
-    q127_leverage_category,
-    q128_leverage_wtm,
-    q129_leverage_yns,
-    q130_execute_percentage,
-    q131_execute_category,
-    q132_execute_wtm,
-    q133_execute_yns,
-    q134_final_percentage,
-    q135_final_summary_wtm,
-    q136_final_summary_yns
-  } = req.body;
+  // if JotForm wrapped everything in rawRequest, parse it:
+  let data = {};
+  if (req.body.rawRequest) {
+    try {
+      data = JSON.parse(req.body.rawRequest);
+    } catch (err) {
+      console.error("❌ rawRequest parse error:", err);
+      return res.status(400).send("Bad rawRequest");
+    }
+  } else {
+    // otherwise assume top‑level fields
+    data = req.body;
+  }
 
-  // basic validation
+  // now pull your two critical fields:
+  const user_id = data.q189_user_id;
+  const email   = data.q12_email;
+
   if (!user_id || !email) {
     console.warn("⚠️ Missing user_id or email:", { user_id, email });
     return res.status(400).send("Missing user_id or email");
   }
 
-  // build a flat name if your Name field is an object
-  let name = "";
-  if (nameObj && (nameObj.first || nameObj.last)) {
-    name = `${nameObj.first || ""} ${nameObj.last || ""}`.trim();
-  }
-
+  // build the rest of your payload
   const payload = {
     user_id,
-    submission_date: new Date().toISOString(),
-    name,
+    submission_date:     new Date().toISOString(),
+    name:                `${data.q11_first || ""} ${data.q11_last || ""}`.trim(),
     email,
-    activate_percentage:  q118_activate_percentage  || "",
-    activate_category:    q119_activate_category    || "",
-    activate_wtm:         q120_activate_wtm         || "",
-    activate_yns:         q121_activate_yns         || "",
-    build_percentage:     q122_build_percentage     || "",
-    build_category:       q123_build_category       || "",
-    build_wtm:            q124_build_wtm            || "",
-    build_yns:            q125_build_yns            || "",
-    leverage_percentage:  q126_leverage_percentage  || "",
-    leverage_category:    q127_leverage_category    || "",
-    leverage_wtm:         q128_leverage_wtm         || "",
-    leverage_yns:         q129_leverage_yns         || "",
-    execute_percentage:   q130_execute_percentage   || "",
-    execute_category:     q131_execute_category     || "",
-    execute_wtm:          q132_execute_wtm          || "",
-    execute_yns:          q133_execute_yns          || "",
-    final_percentage:     q134_final_percentage     || "",
-    final_summary_wtm:    q135_final_summary_wtm    || "",
-    final_summary_yns:    q136_final_summary_yns    || ""
+    activate_percentage: data.q118_activate_percentage || "",
+    activate_category:   data.q119_activate_category   || "",
+    activate_wtm:        data.q120_activate_wtm        || "",
+    activate_yns:        data.q121_activate_yns        || "",
+    build_percentage:    data.q122_build_percentage    || "",
+    build_category:      data.q123_build_category      || "",
+    build_wtm:           data.q124_build_wtm           || "",
+    build_yns:           data.q125_build_yns           || "",
+    leverage_percentage: data.q126_leverage_percentage || "",
+    leverage_category:   data.q127_leverage_category   || "",
+    leverage_wtm:        data.q128_leverage_wtm        || "",
+    leverage_yns:        data.q129_leverage_yns        || "",
+    execute_percentage:  data.q130_execute_percentage  || "",
+    execute_category:    data.q131_execute_category    || "",
+    execute_wtm:         data.q132_execute_wtm         || "",
+    execute_yns:         data.q133_execute_yns         || "",
+    final_percentage:    data.q134_final_percentage    || "",
+    final_summary_wtm:   data.q135_final_summary_wtm   || "",
+    final_summary_yns:   data.q136_final_summary_yns   || ""
   };
 
   console.log("📤 Inserting into assessment_results_2:", payload);
