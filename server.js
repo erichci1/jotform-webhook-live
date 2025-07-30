@@ -1,5 +1,6 @@
 // server.js
 require("dotenv").config();
+
 const express    = require("express");
 const bodyParser = require("body-parser");
 const multer     = require("multer");
@@ -8,6 +9,7 @@ const { createClient } = require("@supabase/supabase-js");
 const app  = express();
 const port = process.env.PORT || 3000;
 
+// parse JSON, form‑encoded, and multipart "none"
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(multer().none());
@@ -21,7 +23,7 @@ app.post("/", async (req, res) => {
   try {
     console.log("📥 Received payload:", req.body);
 
-    // destructure your form fields by their jotform IDs
+    // JotForm field → local var
     const {
       q189_user_id: user_id,
       q12_email:    email,
@@ -47,10 +49,10 @@ app.post("/", async (req, res) => {
       q136_final_summary_yns
     } = req.body;
 
-    // name‑widget comes in as an object { first, last }
+    // reconstruct name from JotForm's Name widget
     let name = "";
     if (rawName && typeof rawName === "object") {
-      name = `${rawName.first || ""} ${rawName.last || ""}`.trim();
+      name = `${rawName.first||""} ${rawName.last||""}`.trim();
     }
 
     if (!user_id || !email) {
@@ -63,25 +65,25 @@ app.post("/", async (req, res) => {
       submission_date: new Date().toISOString(),
       name,
       email,
-      activate_percentage: q118_activate_percentage  || "",
-      activate_category:   q119_activate_category    || "",
-      activate_wtm:        q120_activate_wtm         || "",
-      activate_yns:        q121_activate_yns         || "",
-      build_percentage:    q122_build_percentage     || "",
-      build_category:      q123_build_category       || "",
-      build_wtm:           q124_build_wtm            || "",
-      build_yns:           q125_build_yns            || "",
-      leverage_percentage: q126_leverage_percentage  || "",
-      leverage_category:   q127_leverage_category    || "",
-      leverage_wtm:        q128_leverage_wtm         || "",
-      leverage_yns:        q129_leverage_yns         || "",
-      execute_percentage:  q130_execute_percentage   || "",
-      execute_category:    q131_execute_category     || "",
-      execute_wtm:         q132_execute_wtm          || "",
-      execute_yns:         q133_execute_yns          || "",
-      final_percentage:    q134_final_percentage     || "",
-      final_summary_wtm:   q135_final_summary_wtm    || "",
-      final_summary_yns:   q136_final_summary_yns    || ""
+      activate_percentage:  q118_activate_percentage  || "",
+      activate_category:    q119_activate_category    || "",
+      activate_wtm:         q120_activate_wtm         || "",
+      activate_yns:         q121_activate_yns         || "",
+      build_percentage:     q122_build_percentage     || "",
+      build_category:       q123_build_category       || "",
+      build_wtm:            q124_build_wtm            || "",
+      build_yns:            q125_build_yns            || "",
+      leverage_percentage:  q126_leverage_percentage  || "",
+      leverage_category:    q127_leverage_category    || "",
+      leverage_wtm:         q128_leverage_wtm         || "",
+      leverage_yns:         q129_leverage_yns         || "",
+      execute_percentage:   q130_execute_percentage   || "",
+      execute_category:     q131_execute_category     || "",
+      execute_wtm:          q132_execute_wtm          || "",
+      execute_yns:          q133_execute_yns          || "",
+      final_percentage:     q134_final_percentage     || "",
+      final_summary_wtm:    q135_final_summary_wtm    || "",
+      final_summary_yns:    q136_final_summary_yns    || ""
     };
 
     const { error } = await supabase
