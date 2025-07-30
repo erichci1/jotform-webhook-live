@@ -1,70 +1,104 @@
 // server.js
-require('dotenv').config();
-const express    = require('express');
-const bodyParser = require('body-parser');
-const { createClient } = require('@supabase/supabase-js');
+import express from "express";
+import bodyParser from "body-parser";
+import dotenv from "dotenv";
+import { createClient } from "@supabase/supabase-js";
 
-const app  = express();
-const port = process.env.PORT || 3000;
+dotenv.config(); // loads SUPABASE_URL & SUPABASE_SERVICE_ROLE_KEY
 
-// initialise Supabase client with your Service Role key
+const app = express();
+const port = process.env.PORT || 10000;
+
+// allow JSON + URL‑encoded bodies
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// supabase client with Service Role key
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// parse both JSON and x-www-form-urlencoded bodies
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
-
-app.post('/', async (req, res) => {
+app.post("/", async (req, res) => {
   try {
-    // JotForm will send you fields like q12_email, q189_user_id, etc.
-    const data = req.body || {};
+    console.log("📥 Received payload:", JSON.stringify(req.body, null, 2));
 
-    const payload = {
-      user_id:             data.q189_user_id               || null,
-      submission_date:     new Date().toISOString(),
-      name:                `${data.q11_name_first||''} ${data.q11_name_last||''}`.trim(),
-      email:               data.q12_email                  || '',
-      activate_percentage: data.q118_activate_percentage    || '',
-      activate_category:   data.q119_activate_category      || '',
-      activate_wtm:        data.q120_activate_wtm           || '',
-      activate_yns:        data.q121_activate_yns           || '',
-      build_percentage:    data.q122_build_percentage       || '',
-      build_category:      data.q123_build_category         || '',
-      build_wtm:           data.q124_build_wtm              || '',
-      build_yns:           data.q125_build_yns              || '',
-      leverage_percentage: data.q126_leverage_percentage    || '',
-      leverage_category:   data.q127_leverage_category      || '',
-      leverage_wtm:        data.q128_leverage_wtm           || '',
-      leverage_yns:        data.q129_leverage_yns           || '',
-      execute_percentage:  data.q130_execute_percentage     || '',
-      execute_category:    data.q131_execute_category       || '',
-      execute_wtm:         data.q132_execute_wtm            || '',
-      execute_yns:         data.q133_execute_yns            || '',
-      final_percentage:    data.q134_final_percentage       || '',
-      final_summary_wtm:   data.q135_final_summary_wtm      || '',
-      final_summary_yns:   data.q136_final_summary_yns      || ''
+    // Pull fields straight off the top‑level body
+    const {
+      q11_Name: { first: first_name = "", last: last_name = "" } = {},
+      q12_Email:        email       = "",
+      q189_user_id:     user_id     = "",
+      q118_activate_percentage       = "",
+      q119_activate_category         = "",
+      q155_activate_insight          = "",
+      q177_activate_yns              = "",
+      q129_build_percentage          = "",
+      q136_build_category            = "",
+      q156_build_insight             = "",
+      q178_build_yns                 = "",
+      q130_leverage_percentage       = "",
+      q137_leverage_category         = "",
+      q157_leverage_insight          = "",
+      q179_leverage_yns              = "",
+      q186_execute_percentage        = "",
+      q138_execute_category          = "",
+      q158_execute_insight           = "",
+      q180_execute_yns               = "",
+      q133_final_percentage          = "",
+      q159_final_summary_insight     = "",
+      q188_final_summary_yns         = ""
+    } = req.body;
+
+    // Basic validation
+    if (!user_id || !email) {
+      console.warn("⚠️ Missing user_id or email:", { user_id, email });
+      return res.status(400).send("Missing user_id or email");
+    }
+
+    // Build our row
+    const row = {
+      user_id,
+      submission_date: new Date().toISOString(),
+      first_name,
+      last_name,
+      email,
+      activate_percentage:       q118_activate_percentage,
+      activate_category:         q119_activate_category,
+      activate_insight:          q155_activate_insight,
+      activate_yns:              q177_activate_yns,
+      build_percentage:          q129_build_percentage,
+      build_category:            q136_build_category,
+      build_insight:             q156_build_insight,
+      build_yns:                 q178_build_yns,
+      leverage_percentage:       q130_leverage_percentage,
+      leverage_category:         q137_leverage_category,
+      leverage_insight:          q157_leverage_insight,
+      leverage_yns:              q179_leverage_yns,
+      execute_percentage:        q186_execute_percentage,
+      execute_category:          q138_execute_category,
+      execute_insight:           q158_execute_insight,
+      execute_yns:               q180_execute_yns,
+      final_percentage:          q133_final_percentage,
+      final_summary_insight:     q159_final_summary_insight,
+      final_summary_yns:         q188_final_summary_yns,
+      raw_submission:            req.body
     };
 
-    if (!payload.user_id || !payload.email) {
-      console.warn('Missing user_id or email', payload);
-      return res.status(400).send('Missing user_id or email');
-    }
-
+    // Insert into our new table
     const { error } = await supabase
-      .from('assessment_results_2')
-      .insert([payload]);
+      .from("assessment_results_2")
+      .insert(row);
 
     if (error) {
-      console.error('Supabase insert error:', error);
-      return res.status(500).send('Insert failed');
+      console.error("❌ Supabase insert error:", error);
+      return res.status(500).send("Insert failed");
     }
-    res.status(200).send('OK');
+
+    console.log("✅ Insert successful");
+    res.status(200).send("OK");
   } catch (err) {
-    console.error('Webhook error:', err);
-    res.status(500).send('Server error');
+    console.error("❌ Server error:", err);
+    res.status(500).send("Internal Error");
   }
 });
 
