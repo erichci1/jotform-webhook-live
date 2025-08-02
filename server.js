@@ -8,16 +8,21 @@ const { createClient } = require("@supabase/supabase-js");
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// multer for form‑data (no files)
-app.use(multer().none());
-
-// allow JSON & URL‑encoded (for your curl tests)
+// 1) Body parsing for JSON & URL-encoded
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// supabase client with service role key
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("🚨 Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env");
+// 2) Multer for form-data (no files)
+const upload = multer().none();
+
+// 3) Supabase client (service role)
+if (
+  !process.env.SUPABASE_URL ||
+  !process.env.SUPABASE_SERVICE_ROLE_KEY
+) {
+  console.error(
+    "🚨 Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env"
+  );
   process.exit(1);
 }
 const supabase = createClient(
@@ -25,27 +30,26 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-app.post("/", async (req, res) => {
-  console.log("––––––––––––––––––––––––––––––––––––");
-  console.log("📥 Received raw body:", req.body);
+// 4) Webhook endpoint
+app.post("/", upload, async (req, res) => {
+  console.log("––––––––––––––––––––––––––––");
+  console.log("📥 Received body:", req.body);
 
-  // 1) JotForm wraps everything in rawRequest (string)
-  let data;
-  if (req.body.rawRequest) {
+  // 4a) If JotForm wrapped into rawRequest, parse it
+  let data = req.body;
+  if (typeof req.body.rawRequest === "string") {
     try {
       data = JSON.parse(req.body.rawRequest);
-      // JotForm sometimes double‑stringifies
-      if (typeof data === "string") data = JSON.parse(data);
+      if (typeof data === "string") {
+        data = JSON.parse(data);
+      }
     } catch (err) {
       console.error("❌ rawRequest parse error:", err);
       return res.status(400).send("Bad rawRequest payload");
     }
-  } else {
-    // 2) fallback for your -d '{ ... }' curl tests
-    data = req.body;
   }
 
-  // 3) extract the two magic fields
+  // 4b) Destructure required fields
   const user_id = data.q189_user_id;
   const email   = data.q12_email;
   if (!user_id || !email) {
@@ -53,12 +57,12 @@ app.post("/", async (req, res) => {
     return res.status(400).send("Missing user_id or email");
   }
 
-  // 4) build your insert payload
+  // 4c) Build the full payload
   const payload = {
     user_id,
+    email,
     submission_date:     data.submissionDate || new Date().toISOString(),
     name:                `${data.q11_name?.first || ""} ${data.q11_name?.last || ""}`.trim(),
-    email,
     activate_percentage: data.q118_activate_percentage || "",
     activate_category:   data.q119_activate_category   || "",
     activate_wtm:        data.q120_activate_wtm        || "",
@@ -81,6 +85,8 @@ app.post("/", async (req, res) => {
   };
 
   console.log("📤 Inserting into assessment_results_2:", payload);
+
+  // 4d) Insert into Supabase
   const { error } = await supabase
     .from("assessment_results_2")
     .insert([payload]);
@@ -94,6 +100,7 @@ app.post("/", async (req, res) => {
   res.status(200).send("OK");
 });
 
+// 5) Start the server
 app.listen(PORT, () => {
   console.log(`🚀 Webhook server listening on port ${PORT}`);
 });
