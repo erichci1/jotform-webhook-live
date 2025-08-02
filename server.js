@@ -8,21 +8,14 @@ const { createClient } = require("@supabase/supabase-js");
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// 1) Body parsing
+// Body parsing (JSON & form-encoded)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// 2) Multer for any form-data
 const upload = multer().none();
 
-// 3) Supabase client
-if (
-  !process.env.SUPABASE_URL ||
-  !process.env.SUPABASE_SERVICE_ROLE_KEY
-) {
-  console.error(
-    "🚨 Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env"
-  );
+// Supabase client
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.error("🚨 Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   process.exit(1);
 }
 const supabase = createClient(
@@ -30,41 +23,55 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// 4) Webhook endpoint
 app.post("/", upload, async (req, res) => {
-  console.log("–––– Received body keys:", Object.keys(req.body));
-  console.log("–––– Full body payload:", req.body);
+  console.log("––––––––––––––––––––––––––––");
+  console.log("📥 Raw req.body keys:", Object.keys(req.body));
 
-  // 4a) Grab your discrete fields:
-  const user_id             = req.body.q189_user_id;
-  const email               = req.body.q12_email;
-  const activate_percentage = req.body.q118_activate_percentage || "";
-  const activate_category   = req.body.q119_activate_category   || "";
-  const activate_wtm        = req.body.q120_activate_wtm        || "";
-  const activate_yns        = req.body.q121_activate_yns        || "";
-  const build_percentage    = req.body.q122_build_percentage    || "";
-  const build_category      = req.body.q123_build_category      || "";
-  const build_wtm           = req.body.q124_build_wtm           || "";
-  const build_yns           = req.body.q125_build_yns           || "";
-  const leverage_percentage = req.body.q126_leverage_percentage || "";
-  const leverage_category   = req.body.q127_leverage_category   || "";
-  const leverage_wtm        = req.body.q128_leverage_wtm        || "";
-  const leverage_yns        = req.body.q129_leverage_yns        || "";
-  const execute_percentage  = req.body.q130_execute_percentage  || "";
-  const execute_category    = req.body.q131_execute_category    || "";
-  const execute_wtm         = req.body.q132_execute_wtm         || "";
-  const execute_yns         = req.body.q133_execute_yns         || "";
-  const final_percentage    = req.body.q134_final_percentage    || "";
-  const final_summary_wtm   = req.body.q135_final_summary_wtm   || "";
-  const final_summary_yns   = req.body.q136_final_summary_yns   || "";
+  // 1) Parse JotForm’s rawRequest if present
+  let data = req.body;
+  if (typeof req.body.rawRequest === "string") {
+    try {
+      data = JSON.parse(req.body.rawRequest);
+      if (typeof data === "string") data = JSON.parse(data);
+    } catch (err) {
+      console.error("❌ rawRequest parse error:", err);
+      return res.status(400).send("Bad rawRequest payload");
+    }
+  }
 
-  // 4b) Validate required
+  // 2) Now log exactly which fields we actually have
+  console.log("📥 Parsed data keys:", Object.keys(data));
+
+  // 3) Pull out your discrete fields from `data`
+  const user_id             = data.q189_user_id;            // ← make sure this matches one of the Parsed keys
+  const email               = data.q12_email;               // ← make sure this matches one of the Parsed keys
+  const activate_percentage = data.q118_activate_percentage || "";
+  const activate_category   = data.q119_activate_category   || "";
+  const activate_wtm        = data.q120_activate_wtm        || "";
+  const activate_yns        = data.q121_activate_yns        || "";
+  const build_percentage    = data.q122_build_percentage    || "";
+  const build_category      = data.q123_build_category      || "";
+  const build_wtm           = data.q124_build_wtm           || "";
+  const build_yns           = data.q125_build_yns           || "";
+  const leverage_percentage = data.q126_leverage_percentage || "";
+  const leverage_category   = data.q127_leverage_category   || "";
+  const leverage_wtm        = data.q128_leverage_wtm        || "";
+  const leverage_yns        = data.q129_leverage_yns        || "";
+  const execute_percentage  = data.q130_execute_percentage  || "";
+  const execute_category    = data.q131_execute_category    || "";
+  const execute_wtm         = data.q132_execute_wtm         || "";
+  const execute_yns         = data.q133_execute_yns         || "";
+  const final_percentage    = data.q134_final_percentage    || "";
+  const final_summary_wtm   = data.q135_final_summary_wtm   || "";
+  const final_summary_yns   = data.q136_final_summary_yns   || "";
+
+  // 4) Validate
   if (!user_id || !email) {
     console.warn("⚠️ Missing user_id or email:", { user_id, email });
     return res.status(400).send("Missing user_id or email");
   }
 
-  // 4c) Build payload
+  // 5) Build your payload
   const payload = {
     user_id,
     email,
@@ -92,7 +99,7 @@ app.post("/", upload, async (req, res) => {
 
   console.log("📤 Inserting payload:", payload);
 
-  // 4d) Insert to Supabase
+  // 6) Insert into Supabase
   const { error } = await supabase
     .from("assessment_results_2")
     .insert([payload]);
@@ -106,7 +113,6 @@ app.post("/", upload, async (req, res) => {
   res.send("OK");
 });
 
-// 5) Launch
 app.listen(PORT, () => {
   console.log(`🚀 Webhook server listening on port ${PORT}`);
 });
