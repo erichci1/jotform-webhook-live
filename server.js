@@ -7,14 +7,13 @@ const { createClient } = require("@supabase/supabase-js");
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
-
-// Body parsing (JSON & form-encoded)
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 const upload = multer().none();
 
-// Supabase client
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+// 1) Init Supabase with a service-role key
+if (
+  !process.env.SUPABASE_URL ||
+  !process.env.SUPABASE_SERVICE_ROLE_KEY
+) {
   console.error("🚨 Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   process.exit(1);
 }
@@ -23,11 +22,16 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// 2) Body parsers
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// 3) Webhook endpoint
 app.post("/", upload, async (req, res) => {
-  console.log("––––––––––––––––––––––––––––");
+  // A) Debug: what came in?
   console.log("📥 Raw req.body keys:", Object.keys(req.body));
 
-  // 1) Parse JotForm’s rawRequest if present
+  // B) If JotForm wrapped everything in rawRequest, peel it off
   let data = req.body;
   if (typeof req.body.rawRequest === "string") {
     try {
@@ -39,12 +43,11 @@ app.post("/", upload, async (req, res) => {
     }
   }
 
-  // 2) Now log exactly which fields we actually have
+  // C) Now log the parsed keys
   console.log("📥 Parsed data keys:", Object.keys(data));
 
-  // 3) Pull out your discrete fields from `data`
-  const user_id             = data.q189_user_id;            // ← make sure this matches one of the Parsed keys
-  const email               = data.q12_email;               // ← make sure this matches one of the Parsed keys
+  // D) Pull out the discrete fields you need:
+  const email               = data.q12_email;
   const activate_percentage = data.q118_activate_percentage || "";
   const activate_category   = data.q119_activate_category   || "";
   const activate_wtm        = data.q120_activate_wtm        || "";
@@ -65,13 +68,26 @@ app.post("/", upload, async (req, res) => {
   const final_summary_wtm   = data.q135_final_summary_wtm   || "";
   const final_summary_yns   = data.q136_final_summary_yns   || "";
 
-  // 4) Validate
-  if (!user_id || !email) {
-    console.warn("⚠️ Missing user_id or email:", { user_id, email });
-    return res.status(400).send("Missing user_id or email");
+  // E) Basic validation
+  if (!email) {
+    console.warn("⚠️ Missing email:", { email });
+    return res.status(400).send("Missing email");
   }
 
-  // 5) Build your payload
+  // F) Lookup the Supabase user_id from the email
+  const { data: userRecord, error: lookupError } = await supabase
+    .from("users")             // service-role key lets you query the auth.users view
+    .select("id")
+    .eq("email", email)
+    .single();
+
+  if (lookupError || !userRecord) {
+    console.error("❌ Could not find user for email:", email, lookupError);
+    return res.status(404).send("User not found");
+  }
+  const user_id = userRecord.id;
+
+  // G) Build the row
   const payload = {
     user_id,
     email,
@@ -99,20 +115,21 @@ app.post("/", upload, async (req, res) => {
 
   console.log("📤 Inserting payload:", payload);
 
-  // 6) Insert into Supabase
-  const { error } = await supabase
+  // H) Insert into your table
+  const { error: insertError } = await supabase
     .from("assessment_results_2")
     .insert([payload]);
 
-  if (error) {
-    console.error("❌ Supabase insert error:", error);
+  if (insertError) {
+    console.error("❌ Supabase insert error:", insertError);
     return res.status(500).send("Insert failed");
   }
 
   console.log("✅ Insert succeeded");
-  res.send("OK");
+  return res.send("OK");
 });
 
+// 4) Start server
 app.listen(PORT, () => {
   console.log(`🚀 Webhook server listening on port ${PORT}`);
 });
