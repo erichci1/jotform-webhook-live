@@ -1,15 +1,17 @@
 {
-  "name": "jotform-webhook-live",
-  "version": "1.0.0",
-  "type": "commonjs",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.49.4",
-    "dotenv": "^16.5.0",
-    "express": "^5.1.0",
-    "multer": "^2.0.2"
-  }
+"name": "able-webhook",
+"version": "1.0.0",
+"main": "server.js",
+"type": "commonjs",
+"scripts": {
+"start": "node server.js"
+},
+"dependencies": {
+"@supabase/supabase-js": "^2.45.0",
+"cors": "^2.8.5",
+"dotenv": "^16.4.5",
+"express": "^4.19.2",
+"multer": "^1.4.5",
+"body-parser": "^1.20.2"
+}
 }
