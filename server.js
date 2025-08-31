@@ -1,138 +1,112 @@
-// server.js
-require("dotenv").config();
+// server.js (only the route changes)
 
-const express = require("express");
-const cors = require("cors");
-const { createClient } = require("@supabase/supabase-js");
+const qs = require("querystring");
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-/* ------------------------------- Supabase ------------------------------ */
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-console.error("🚨 Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-process.exit(1);
-}
-
-const supabase = createClient(
-process.env.SUPABASE_URL,
-process.env.SUPABASE_SERVICE_ROLE_KEY,
-{ auth: { persistSession: false } }
-);
-
-/* ------------------------------- Middleware ---------------------------- */
-app.use(cors());
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true, limit: "2mb" }));
-
-/* ------------------------------- Helpers -------------------------------- */
-// parse '64%' or '64.19' or '64' → number | null
-function toPct(v) {
-if (v == null) return null;
-if (typeof v === "number") return isFinite(v) ? v : null;
-const s = String(v).trim().replace("%", "");
-const n = parseFloat(s);
-return isFinite(n) ? n : null;
-}
-
-function valOf(obj, keys) {
-for (const k of keys) {
-const v = obj[k];
-if (v !== undefined && v !== null && String(v).trim() !== "") return v;
-}
-return null;
-}
-
-/* -------------------------------- Webhook ------------------------------- */
-app.post("/", async (req, res) => {
+// This route will accept JSON, urlencoded or multipart and normalize into `data`
+app.post("/", express.raw({ type: "*/*" }), async (req, res) => {
 try {
-console.log("📥 raw body keys:", Object.keys(req.body));
+let data = {};
+let text = "";
 
-// JotForm sometimes sends rawRequest as JSON string-within-string
-let data = req.body;
-if (typeof req.body.rawRequest === "string") {
-try {
-data = JSON.parse(req.body.rawRequest);
-if (typeof data === "string") data = JSON.parse(data);
-} catch (e) {
-console.error("❌ rawRequest parse error:", e);
-return res.status(400).send("Bad rawRequest payload");
+// ----- 1) try existing parsers (a reverse proxy or earlier middleware might have filled it)
+if (req.body && typeof req.body === "object" && Object.keys(req.body).length) {
+data = req.body;
+} else {
+// ----- 2) get raw string
+text = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : String(req.body || "");
+
+// if Content-Type JSON or looks like JSON → parse JSON
+const ct = (req.headers["content-type"] || "").toLowerCase();
+if (ct.includes("application/json") || (text.startsWith("{") && text.endsWith("}"))) {
+try { data = JSON.parse(text); } catch (_) {}
+}
+
+// otherwise parse urlencoded
+if (!Object.keys(data).length && text.includes("=")) {
+data = qs.parse(text);
+}
+
+// legacy: Jotform sometimes nests JSON inside `rawRequest`
+if (!Object.keys(data).length && typeof data?.rawRequest === "string") {
+try { data = JSON.parse(data.rawRequest); } catch (_) {}
+if (typeof data === "string") { try { data = JSON.parse(data); } catch (_) {} }
 }
 }
 
 console.log("📥 parsed keys:", Object.keys(data));
 
-/* ----- pull user + email from multiple possible keys ----- */
-const user_id = valOf(data, ["q189_q189_user_id", "user_id"]);
-const email = valOf(data, ["q12_q12_email", "email"]);
+// ---- map your fields
+const email = data.q12_q12_email || data.email || null;
+const user_id = data.q189_q189_user_id || data.user_id || null;
 
-if (!user_id || !email) {
-console.warn("⚠️ Missing user_id/email", { user_id, email });
-return res.status(400).send("Missing user_id or email");
-}
+// normalize percentages: accept '64%' or '64' or 64
+const pct = v =>
+v == null ? null :
+typeof v === "number" ? v :
+typeof v === "string" ? Number(String(v).replace('%','').trim()) :
+null;
 
-/* ----- sanitize percentages to numeric ----- */
 const payload = {
 user_id,
 email,
 submission_date: new Date().toISOString(),
 
-activate_percentage: toPct(valOf(data, ["q187_activate_percentage"])),
-activate_category: valOf(data, ["q134_activate_category"]),
-activate_wtm: valOf(data, ["q155_activate_insight"]),
-activate_yns: valOf(data, ["q177_activate_yns"]),
+activate_percentage : pct(data.q187_activate_percentage),
+activate_category : data.q134_activate_category || null,
+activate_wtm : data.q155_activate_insight || null,
+activate_yns : data.q177_activate_yns || null,
 
-build_percentage: toPct(valOf(data, ["q129_build_percentage"])),
-build_category: valOf(data, ["q136_build_category"]),
-build_wtm: valOf(data, ["q156_build_insight"]),
-build_yns: valOf(data, ["q178_build_yns"]),
+build_percentage : pct(data.q129_build_percentage),
+build_category : data.q136_build_category || null,
+build_wtm : data.q156_build_insight || null,
+build_yns : data.q178_build_yns || null,
 
-leverage_percentage: toPct(valOf(data, ["q130_leverage_percentage"])),
-leverage_category: valOf(data, ["q137_leverage_category"]),
-leverage_wtm: valOf(data, ["q157_leverage_insight"]),
-leverage_yns: valOf(data, ["q179_leverage_yns"]),
+leverage_percentage : pct(data.q130_leverage_percentage),
+leverage_category : data.q137_leverage_category || null,
+leverage_wtm : data.q157_leverage_insight || null,
+leverage_yns : data.q179_leverage_yns || null,
 
-execute_percentage: toPct(valOf(data, ["q186_execute_percentage"])),
-execute_category: valOf(data, ["q138_execute_category"]),
-execute_wtm: valOf(data, ["q158_execute_insight"]), // ✅ fixed
-execute_yns: valOf(data, ["q180_execute_yns"]), // ✅ keep
+execute_percentage : pct(data.q186_execute_percentage),
+execute_category : data.q138_execute_category || null,
+execute_wtm : data.q158_execute_insight || null,
+execute_yns : data.q180_execute_yns || null,
 
-final_percentage: toPct(valOf(data, ["q133_final_percentage"])),
-final_summary_wtm: valOf(data, ["q159_final_summary_insight"]),
-final_summary_yns: valOf(data, ["q188_final_summary_yns"]),
+final_percentage : pct(data.q133_final_percentage),
+final_summary_wtm : data.q159_final_summary_insight || null,
+final_summary_yns : data.q188_final_summary_yns || null,
 };
 
-console.log("📤 inserting:", payload);
+if (!user_id || !email) {
+console.warn("⚠️ Missing user_id or email", { user_id, email, sample: data });
+return res.status(400).send("Missing user_id or email");
+}
+
+console.log("📤 inserting payload:", payload);
 
 const { error: insertError } = await supabase
 .from("assessment_results_2")
 .insert([payload]);
 
 if (insertError) {
-console.error("❌ insert error:", insertError);
+console.error("❌ Supabase insert error:", insertError);
 return res.status(500).send("Insert failed");
 }
 
-// Flip profile flag so UI shows donuts without a page refresh
 const { error: updateError } = await supabase
 .from("profiles")
 .update({ assessment_taken: true })
 .eq("id", user_id);
 
 if (updateError) {
-console.warn("⚠️ profile update failed:", updateError);
-// still return OK; the data is saved — UI can recover on next fetch
+console.warn("⚠️ profiles update failed:", updateError);
+// don’t fail the whole webhook — Jotform will retry on non-200s
 }
 
-console.log("✅ webhook OK");
-res.status(200).send("OK");
+console.log("✅ OK");
+return res.status(200).send("OK");
 } catch (err) {
-console.error("❌ webhook exception:", err);
-res.status(500).send("Server error");
+console.error("💥 webhook handler error", err);
+return res.status(500).send("Server error");
 }
 });
 
-/* -------------------------------- Listen -------------------------------- */
-app.listen(PORT, () => {
-console.log(`🚀 Webhook listening on ${PORT}`);
-});
