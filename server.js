@@ -1,71 +1,30 @@
-// server.js
 require("dotenv").config();
-
 const express = require("express");
+const multer = require("multer");
 const { createClient } = require("@supabase/supabase-js");
 
 const PORT = process.env.PORT || 3000;
 
-// ---- sanity checks
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
 console.error("🚨 Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
 process.exit(1);
 }
 
-// ---- supabase (service role for inserts)
 const supabase = createClient(
 process.env.SUPABASE_URL,
 process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// ---- express
 const app = express();
 
-/**
-* NOTE ABOUT BODY PARSING ORDER
-* -----------------------------
-* We want the Jotform webhook route to read the raw stream.
-* So we put the raw route BEFORE any global JSON/urlencoded parsers.
-*/
+// We will parse multipart at the route level with multer:
+const upload = multer({ limits: { fieldSize: 50 * 1024 * 1024 } }); // generous
 
-// Jotform webhook route (RAW)
-app.post(
-"/",
-express.raw({ type: "*/*" }), // <- important
-async (req, res) => {
-try {
-// ---- print headers and first bytes for debugging
-console.log("🧾 Headers:", req.headers);
-const raw = req.body ? req.body.toString("utf8") : "";
-console.log("📦 Raw length:", raw.length);
-console.log("📦 Raw first 200:", raw.slice(0, 200));
+// Optional parsers for other routes; they do not affect the multer route.
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// ---- parse body
-let data = {};
-if (!raw) {
-console.warn("⚠️ Empty body");
-} else {
-try {
-data = JSON.parse(raw);
-// Jotform sometimes nests JSON in rawRequest string
-if (typeof data === "string") data = JSON.parse(data);
-if (data && typeof data.rawRequest === "string") {
-try {
-data = JSON.parse(data.rawRequest);
-if (typeof data === "string") data = JSON.parse(data);
-} catch (e) {
-console.warn("⚠️ rawRequest parse failed:", e?.message);
-}
-}
-} catch (e) {
-console.error("❌ JSON parse error:", e?.message);
-return res.status(400).send("Invalid JSON payload");
-}
-}
-
-console.log("🔑 Parsed keys:", Object.keys(data));
-
-// ---- helper to turn '64%' -> 64
+// ----------------- helpers -----------------
 const toNumber = (v) => {
 if (v === null || v === undefined) return null;
 if (typeof v === "number") return v;
@@ -75,8 +34,29 @@ const n = parseFloat(s.replace(/%/g, ""));
 return Number.isFinite(n) ? n : null;
 };
 
-// ---- map fields (update these if your form keys change)
-const email = data.q12_q12_email ?? data.q12_email ?? data.email ?? null;
+// ----------------- webhook -----------------
+app.post("/", upload.any(), async (req, res) => {
+try {
+const ct = req.headers["content-type"] || "";
+console.log("🧾 Content-Type:", ct);
+console.log("🗂 multer fields:", Object.keys(req.body || {}));
+
+let data = req.body || {};
+
+// Some Jotform setups also add a JSON string called rawRequest – parse it if present.
+if (typeof data.rawRequest === "string") {
+try {
+const parsed = JSON.parse(data.rawRequest);
+data = typeof parsed === "string" ? JSON.parse(parsed) : parsed;
+console.log("✅ parsed rawRequest into object");
+} catch (e) {
+console.warn("⚠️ rawRequest parse failed:", e?.message);
+}
+}
+
+// Map fields (adjust if your form keys change)
+const email =
+data.q12_q12_email ?? data.q12_email ?? data.email ?? null;
 const user_id = data.q189_q189_user_id ?? data.user_id ?? null;
 
 const payload = {
@@ -109,18 +89,16 @@ final_summary_wtm: data.q159_final_summary_insight ?? null,
 final_summary_yns: data.q188_final_summary_yns ?? null,
 };
 
-console.log("🧩 Mapped payload:", payload);
+console.log("🧩 payload:", payload);
 
-// ---- sanity: required user & email
 if (!payload.user_id || !payload.email) {
-console.warn("⚠️ Missing user_id/email:", {
+console.warn("⚠️ Missing user_id/email", {
 user_id: payload.user_id,
 email: payload.email,
 });
 return res.status(400).send("Missing user_id or email");
 }
 
-// ---- insert
 const { error: insertError } = await supabase
 .from("assessment_results_2")
 .insert([payload]);
@@ -130,7 +108,6 @@ console.error("❌ Insert error:", insertError);
 return res.status(500).send("Insert failed");
 }
 
-// ---- update profiles flag
 const { error: updateError } = await supabase
 .from("profiles")
 .update({ assessment_taken: true })
@@ -138,10 +115,9 @@ const { error: updateError } = await supabase
 
 if (updateError) {
 console.error("⚠️ Profile flag update failed:", updateError);
-// don’t fail the webhook – the insert succeeded
 return res
 .status(200)
-.send("Inserted; profile flag update failed (will retry manually)");
+.send("Inserted; profile update failed (manual retry)");
 }
 
 console.log("✅ Insert OK + profiles.assessment_taken updated");
@@ -150,16 +126,8 @@ return res.status(200).send("OK");
 console.error("💥 Uncaught webhook error:", err);
 return res.status(500).send("Server error");
 }
-}
-);
-
-// (optional) other JSON routes can be added **after** the raw route
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+});
 
 app.get("/health", (_req, res) => res.send("ok"));
 
-// ---- start
-app.listen(PORT, () => {
-console.log(`🚀 Webhook listening on :${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Webhook listening on :${PORT}`));
