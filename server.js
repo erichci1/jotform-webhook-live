@@ -94,8 +94,8 @@ leverage_yns: valOf(data, ["q179_leverage_yns"]),
 
 execute_percentage: toPct(valOf(data, ["q186_execute_percentage"])),
 execute_category: valOf(data, ["q138_execute_category"]),
-execute_wtm: valOf(data, ["q158_execute_insight"])),
-execute_yns: valOf(data, ["q180_execute_yns"]),
+execute_wtm: valOf(data, ["q158_execute_insight"]), // ✅ fixed
+execute_yns: valOf(data, ["q180_execute_yns"]), // ✅ keep
 
 final_percentage: toPct(valOf(data, ["q133_final_percentage"])),
 final_summary_wtm: valOf(data, ["q159_final_summary_insight"]),
