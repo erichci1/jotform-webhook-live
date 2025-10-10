@@ -88,7 +88,19 @@ console.warn("⚠️ rawRequest parse failed:", e?.message);
 }
 
 // --- Resolve submission_id across both layers ---
-const submission_id = resolveSubmissionId(outer, raw);
+let submission_id =
+outer.submissionID || // Jotform outer body field
+outer.submission_id ||
+outer.id ||
+(raw && (raw.submissionID || raw.submission_id || raw.id)) ||
+null;
+
+if (!submission_id) {
+submission_id = `srv_${require("crypto").randomUUID()}`;
+console.log("ℹ️ submission_id not provided; generated:", submission_id);
+} else {
+console.log("✅ submission_id detected:", submission_id);
+}
 
 // --- Identity (prefer outer; fallback to raw) ---
 const email =
