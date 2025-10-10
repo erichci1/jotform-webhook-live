@@ -1,3 +1,4 @@
+// server.js
 require("dotenv").config();
 const express = require("express");
 const multer = require("multer");
@@ -6,6 +7,7 @@ const { randomUUID } = require("crypto");
 
 const PORT = process.env.PORT || 3000;
 
+// --- env guard ---
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
 console.error("🚨 Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
 process.exit(1);
@@ -18,10 +20,10 @@ process.env.SUPABASE_SERVICE_ROLE_KEY
 
 const app = express();
 
-// We'll parse multipart at the route level with multer:
-const upload = multer({ limits: { fieldSize: 50 * 1024 * 1024 } }); // generous
+// Parse multipart only on routes that need it
+const upload = multer({ limits: { fieldSize: 50 * 1024 * 1024 } });
 
-// Optional parsers for other routes; they do not affect the multer route.
+// Optional parsers for other routes
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -30,18 +32,46 @@ const toNumber = (v) => {
 if (v === null || v === undefined) return null;
 if (typeof v === "number") return Number.isFinite(v) ? v : null;
 const s = String(v).trim();
-if (s === "") return null;
+if (!s) return null;
 const n = parseFloat(s.replace(/%/g, ""));
 return Number.isFinite(n) ? n : null;
 };
-
 const strOrNull = (v) => {
 if (v === undefined || v === null) return null;
 const s = String(v).trim();
 return s ? s : null;
 };
-
 const nowISO = () => new Date().toISOString();
+
+/**
+* Pull a submission id from a messy Jotform payload (outer body + parsed rawRequest)
+*/
+function getSubmissionId(data) {
+// try outer fields
+let sid =
+data.submission_id ||
+data.submissionID ||
+data.id ||
+null;
+
+// try nested rawRequest object if still missing
+const raw = data && typeof data.rawRequest === "object" ? data.rawRequest : null;
+if (!sid && raw) {
+sid =
+raw.submission_id ||
+raw.submissionID ||
+raw.id ||
+null;
+}
+
+if (!sid) {
+sid = `srv_${randomUUID()}`;
+console.log("ℹ️ submission_id not provided; generated:", sid);
+} else {
+console.log("✅ submission_id detected:", sid);
+}
+return sid;
+}
 
 // ----------------- webhook -----------------
 app.post("/", upload.any(), async (req, res) => {
@@ -63,9 +93,8 @@ console.warn("⚠️ rawRequest parse failed:", e?.message);
 }
 }
 
-// Pull IDs (prefer explicit submission id if present)
-let submission_id =
-data.submission_id || data.submissionID || data.id || null;
+// --- IDs & identity
+const submission_id = getSubmissionId(data);
 
 const email =
 data.q12_q12_email ?? data.q12_email ?? data.email ?? null;
@@ -77,11 +106,7 @@ console.warn("⚠️ Missing user_id/email", { user_id, email });
 return res.status(400).send("Missing user_id or email");
 }
 
-if (!submission_id) {
-submission_id = `srv_${randomUUID()}`;
-}
-
-// Map fields (adjust if your form keys change)
+// --- Map fields (adjust if your form keys change)
 const row = {
 submission_id,
 user_id,
@@ -114,22 +139,26 @@ final_summary_wtm: strOrNull(data.q159_final_summary_insight),
 final_summary_yns: strOrNull(data.q188_final_summary_yns),
 };
 
-console.log("🧩 payload:", row);
+console.log("🧩 payload (with submission_id):", {
+submission_id: row.submission_id,
+user_id: row.user_id,
+email: row.email,
+final_percentage: row.final_percentage,
+});
 
-// 1) Idempotent insert → requires unique index on submission_id
+// --- 1) idempotent insert on submission_id
 const insert = await supabase
 .from("assessment_results_2")
 .upsert(row, { onConflict: "submission_id", ignoreDuplicates: true })
 .select("submission_id")
 .single();
 
-// If duplicate, proceed (Jotform often retries)
 if (insert.error && insert.error.code !== "23505") {
 console.error("❌ Insert error:", insert.error);
 return res.status(500).send("Insert failed");
 }
 
-// 2) Snapshot for fast dashboard read
+// --- 2) snapshot for fast dashboard read
 const ap = row.activate_percentage ?? 0;
 const bp = row.build_percentage ?? 0;
 const lp = row.leverage_percentage ?? 0;
@@ -164,10 +193,10 @@ updated_at: nowISO(),
 
 if (up.error) {
 console.warn("⚠️ assessment_profile upsert failed:", up.error);
-// not fatal for 200; the dashboard can still read history
+// not fatal
 }
 
-// 3) Optional: mark profiles.assessment_taken = true
+// --- 3) optional: flag profile
 const flag = await supabase
 .from("profiles")
 .update({ assessment_taken: true, updated_at: nowISO() })
@@ -175,8 +204,7 @@ const flag = await supabase
 
 if (flag.error) {
 console.warn("⚠️ profiles.assessment_taken update failed:", flag.error);
-// still OK overall
-return res.status(200).send("Inserted; profile update failed (manual retry)");
+return res.status(200).send("Inserted; profile update failed");
 }
 
 console.log("✅ Insert/Upsert OK + profiles.assessment_taken updated");
@@ -187,6 +215,10 @@ return res.status(500).send("Server error");
 }
 });
 
+// health probe
 app.get("/health", (_req, res) => res.send("ok"));
 
-app.listen(PORT, () => console.log(`🚀 Webhook listening on :${PORT}`));
+app.listen(PORT, () => {
+console.log(`🚀 Webhook listening on :${PORT}`);
+});
+
