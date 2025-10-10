@@ -20,7 +20,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY
 
 const app = express();
 
-// Only parse multipart on the webhook route (multer); keep others light
+// Only parse multipart on the webhook route; keep others light
 const upload = multer({ limits: { fieldSize: 50 * 1024 * 1024 } });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -41,28 +41,11 @@ return s ? s : null;
 };
 const nowISO = () => new Date().toISOString();
 
-/** Resolve a value from outer payload first, then raw (if provided). */
-function pickKey(outer, raw, key) {
+/** safe getter that prefers outer, then raw */
+function pick(outer, raw, key) {
 if (outer && Object.prototype.hasOwnProperty.call(outer, key)) return outer[key];
 if (raw && Object.prototype.hasOwnProperty.call(raw, key)) return raw[key];
 return null;
-}
-
-/** Pull submission id from both layers without overwriting the body. */
-function resolveSubmissionId(outer, raw) {
-let sid =
-pickKey(outer, raw, "submission_id") ||
-pickKey(outer, raw, "submissionID") ||
-pickKey(outer, raw, "id") ||
-null;
-
-if (!sid) {
-sid = `srv_${randomUUID()}`;
-console.log("ℹ️ submission_id not provided; generated:", sid);
-} else {
-console.log("✅ submission_id detected:", sid);
-}
-return sid;
 }
 
 // ----------------- webhook -----------------
@@ -87,16 +70,16 @@ console.warn("⚠️ rawRequest parse failed:", e?.message);
 }
 }
 
-// --- Resolve submission_id across both layers ---
+// --- Resolve submission_id across both layers (PREFER outer.submissionID) ---
 let submission_id =
-outer.submissionID || // Jotform outer body field
+outer.submissionID || // <— Jotform outer body shows this in your logs
 outer.submission_id ||
 outer.id ||
 (raw && (raw.submissionID || raw.submission_id || raw.id)) ||
 null;
 
 if (!submission_id) {
-submission_id = `srv_${require("crypto").randomUUID()}`;
+submission_id = `srv_${randomUUID()}`;
 console.log("ℹ️ submission_id not provided; generated:", submission_id);
 } else {
 console.log("✅ submission_id detected:", submission_id);
@@ -104,14 +87,14 @@ console.log("✅ submission_id detected:", submission_id);
 
 // --- Identity (prefer outer; fallback to raw) ---
 const email =
-pickKey(outer, raw, "q12_q12_email") ??
-pickKey(outer, raw, "q12_email") ??
-pickKey(outer, raw, "email") ??
+pick(outer, raw, "q12_q12_email") ??
+pick(outer, raw, "q12_email") ??
+pick(outer, raw, "email") ??
 null;
 
 const user_id =
-pickKey(outer, raw, "q189_q189_user_id") ??
-pickKey(outer, raw, "user_id") ??
+pick(outer, raw, "q189_q189_user_id") ??
+pick(outer, raw, "user_id") ??
 null;
 
 if (!user_id || !email) {
@@ -127,29 +110,29 @@ email,
 submission_date: nowISO(),
 created_at: nowISO(),
 
-activate_percentage: toNumber(pickKey(outer, raw, "q187_activate_percentage")),
-activate_category: strOrNull(pickKey(outer, raw, "q134_activate_category")),
-activate_wtm: strOrNull(pickKey(outer, raw, "q155_activate_insight")),
-activate_yns: strOrNull(pickKey(outer, raw, "q177_activate_yns")),
+activate_percentage: toNumber(pick(outer, raw, "q187_activate_percentage")),
+activate_category: strOrNull(pick(outer, raw, "q134_activate_category")),
+activate_wtm: strOrNull(pick(outer, raw, "q155_activate_insight")),
+activate_yns: strOrNull(pick(outer, raw, "q177_activate_yns")),
 
-build_percentage: toNumber(pickKey(outer, raw, "q129_build_percentage")),
-build_category: strOrNull(pickKey(outer, raw, "q136_build_category")),
-build_wtm: strOrNull(pickKey(outer, raw, "q156_build_insight")),
-build_yns: strOrNull(pickKey(outer, raw, "q178_build_yns")),
+build_percentage: toNumber(pick(outer, raw, "q129_build_percentage")),
+build_category: strOrNull(pick(outer, raw, "q136_build_category")),
+build_wtm: strOrNull(pick(outer, raw, "q156_build_insight")),
+build_yns: strOrNull(pick(outer, raw, "q178_build_yns")),
 
-leverage_percentage: toNumber(pickKey(outer, raw, "q130_leverage_percentage")),
-leverage_category: strOrNull(pickKey(outer, raw, "q137_leverage_category")),
-leverage_wtm: strOrNull(pickKey(outer, raw, "q157_leverage_insight")),
-leverage_yns: strOrNull(pickKey(outer, raw, "q179_leverage_yns")),
+leverage_percentage: toNumber(pick(outer, raw, "q130_leverage_percentage")),
+leverage_category: strOrNull(pick(outer, raw, "q137_leverage_category")),
+leverage_wtm: strOrNull(pick(outer, raw, "q157_leverage_insight")),
+leverage_yns: strOrNull(pick(outer, raw, "q179_leverage_yns")),
 
-execute_percentage: toNumber(pickKey(outer, raw, "q186_execute_percentage")),
-execute_category: strOrNull(pickKey(outer, raw, "q138_execute_category")),
-execute_wtm: strOrNull(pickKey(outer, raw, "q158_execute_insight")),
-execute_yns: strOrNull(pickKey(outer, raw, "q180_execute_yns")),
+execute_percentage: toNumber(pick(outer, raw, "q186_execute_percentage")),
+execute_category: strOrNull(pick(outer, raw, "q138_execute_category")),
+execute_wtm: strOrNull(pick(outer, raw, "q158_execute_insight")),
+execute_yns: strOrNull(pick(outer, raw, "q180_execute_yns")),
 
-final_percentage: toNumber(pickKey(outer, raw, "q133_final_percentage")),
-final_summary_wtm: strOrNull(pickKey(outer, raw, "q159_final_summary_insight")),
-final_summary_yns: strOrNull(pickKey(outer, raw, "q188_final_summary_yns")),
+final_percentage: toNumber(pick(outer, raw, "q133_final_percentage")),
+final_summary_wtm: strOrNull(pick(outer, raw, "q159_final_summary_insight")),
+final_summary_yns: strOrNull(pick(outer, raw, "q188_final_summary_yns")),
 };
 
 console.log("🧩 payload (with submission_id):", {
@@ -160,7 +143,7 @@ final_percentage: row.final_percentage,
 });
 
 // --- 1) Idempotent write on submission_id ---
-// Requires: unique index on assessment_results_2(submission_id)
+// Requires unique index: create unique index if not exists ux_ar2_submission on assessment_results_2(submission_id);
 const insert = await supabase
 .from("assessment_results_2")
 .upsert(row, { onConflict: "submission_id", ignoreDuplicates: true })
