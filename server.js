@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const multer = require("multer");
 const { createClient } = require("@supabase/supabase-js");
+const { randomUUID } = require("crypto");
 
 const PORT = process.env.PORT || 3000;
 
@@ -17,7 +18,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY
 
 const app = express();
 
-// We will parse multipart at the route level with multer:
+// We'll parse multipart at the route level with multer:
 const upload = multer({ limits: { fieldSize: 50 * 1024 * 1024 } }); // generous
 
 // Optional parsers for other routes; they do not affect the multer route.
@@ -27,12 +28,20 @@ app.use(express.urlencoded({ extended: true }));
 // ----------------- helpers -----------------
 const toNumber = (v) => {
 if (v === null || v === undefined) return null;
-if (typeof v === "number") return v;
+if (typeof v === "number") return Number.isFinite(v) ? v : null;
 const s = String(v).trim();
 if (s === "") return null;
 const n = parseFloat(s.replace(/%/g, ""));
 return Number.isFinite(n) ? n : null;
 };
+
+const strOrNull = (v) => {
+if (v === undefined || v === null) return null;
+const s = String(v).trim();
+return s ? s : null;
+};
+
+const nowISO = () => new Date().toISOString();
 
 // ----------------- webhook -----------------
 app.post("/", upload.any(), async (req, res) => {
@@ -43,7 +52,7 @@ console.log("🗂 multer fields:", Object.keys(req.body || {}));
 
 let data = req.body || {};
 
-// Some Jotform setups also add a JSON string called rawRequest – parse it if present.
+// Some Jotform setups add a JSON string called rawRequest – parse it if present.
 if (typeof data.rawRequest === "string") {
 try {
 const parsed = JSON.parse(data.rawRequest);
@@ -54,73 +63,123 @@ console.warn("⚠️ rawRequest parse failed:", e?.message);
 }
 }
 
-// Map fields (adjust if your form keys change)
+// Pull IDs (prefer explicit submission id if present)
+let submission_id =
+data.submission_id || data.submissionID || data.id || null;
+
 const email =
 data.q12_q12_email ?? data.q12_email ?? data.email ?? null;
+
 const user_id = data.q189_q189_user_id ?? data.user_id ?? null;
 
-const payload = {
-user_id,
-email,
-submission_date: new Date().toISOString(),
-
-activate_percentage: toNumber(data.q187_activate_percentage),
-activate_category: data.q134_activate_category ?? null,
-activate_wtm: data.q155_activate_insight ?? null,
-activate_yns: data.q177_activate_yns ?? null,
-
-build_percentage: toNumber(data.q129_build_percentage),
-build_category: data.q136_build_category ?? null,
-build_wtm: data.q156_build_insight ?? null,
-build_yns: data.q178_build_yns ?? null,
-
-leverage_percentage: toNumber(data.q130_leverage_percentage),
-leverage_category: data.q137_leverage_category ?? null,
-leverage_wtm: data.q157_leverage_insight ?? null,
-leverage_yns: data.q179_leverage_yns ?? null,
-
-execute_percentage: toNumber(data.q186_execute_percentage),
-execute_category: data.q138_execute_category ?? null,
-execute_wtm: data.q158_execute_insight ?? null,
-execute_yns: data.q180_execute_yns ?? null,
-
-final_percentage: toNumber(data.q133_final_percentage),
-final_summary_wtm: data.q159_final_summary_insight ?? null,
-final_summary_yns: data.q188_final_summary_yns ?? null,
-};
-
-console.log("🧩 payload:", payload);
-
-if (!payload.user_id || !payload.email) {
-console.warn("⚠️ Missing user_id/email", {
-user_id: payload.user_id,
-email: payload.email,
-});
+if (!user_id || !email) {
+console.warn("⚠️ Missing user_id/email", { user_id, email });
 return res.status(400).send("Missing user_id or email");
 }
 
-const { error: insertError } = await supabase
-.from("assessment_results_2")
-.insert([payload]);
+if (!submission_id) {
+submission_id = `srv_${randomUUID()}`;
+}
 
-if (insertError) {
-console.error("❌ Insert error:", insertError);
+// Map fields (adjust if your form keys change)
+const row = {
+submission_id,
+user_id,
+email,
+submission_date: nowISO(),
+created_at: nowISO(),
+
+activate_percentage: toNumber(data.q187_activate_percentage),
+activate_category: strOrNull(data.q134_activate_category),
+activate_wtm: strOrNull(data.q155_activate_insight),
+activate_yns: strOrNull(data.q177_activate_yns),
+
+build_percentage: toNumber(data.q129_build_percentage),
+build_category: strOrNull(data.q136_build_category),
+build_wtm: strOrNull(data.q156_build_insight),
+build_yns: strOrNull(data.q178_build_yns),
+
+leverage_percentage: toNumber(data.q130_leverage_percentage),
+leverage_category: strOrNull(data.q137_leverage_category),
+leverage_wtm: strOrNull(data.q157_leverage_insight),
+leverage_yns: strOrNull(data.q179_leverage_yns),
+
+execute_percentage: toNumber(data.q186_execute_percentage),
+execute_category: strOrNull(data.q138_execute_category),
+execute_wtm: strOrNull(data.q158_execute_insight),
+execute_yns: strOrNull(data.q180_execute_yns),
+
+final_percentage: toNumber(data.q133_final_percentage),
+final_summary_wtm: strOrNull(data.q159_final_summary_insight),
+final_summary_yns: strOrNull(data.q188_final_summary_yns),
+};
+
+console.log("🧩 payload:", row);
+
+// 1) Idempotent insert → requires unique index on submission_id
+const insert = await supabase
+.from("assessment_results_2")
+.upsert(row, { onConflict: "submission_id", ignoreDuplicates: true })
+.select("submission_id")
+.single();
+
+// If duplicate, proceed (Jotform often retries)
+if (insert.error && insert.error.code !== "23505") {
+console.error("❌ Insert error:", insert.error);
 return res.status(500).send("Insert failed");
 }
 
-const { error: updateError } = await supabase
-.from("profiles")
-.update({ assessment_taken: true })
-.eq("id", payload.user_id);
+// 2) Snapshot for fast dashboard read
+const ap = row.activate_percentage ?? 0;
+const bp = row.build_percentage ?? 0;
+const lp = row.leverage_percentage ?? 0;
+const ep = row.execute_percentage ?? 0;
 
-if (updateError) {
-console.error("⚠️ Profile flag update failed:", updateError);
-return res
-.status(200)
-.send("Inserted; profile update failed (manual retry)");
+const hasAny = [ap, bp, lp, ep].some((n) => (n ?? 0) > 0);
+const score_overall = hasAny
+? Number(((ap + bp + lp + ep) / 4).toFixed(2))
+: null;
+
+const domains = hasAny
+? {
+activate: row.activate_percentage ?? null,
+build: row.build_percentage ?? null,
+leverage: row.leverage_percentage ?? null,
+execute: row.execute_percentage ?? null,
+}
+: null;
+
+const up = await supabase
+.from("assessment_profile")
+.upsert(
+{
+user_id: row.user_id,
+last_submission_id: row.submission_id,
+score_overall,
+domains,
+updated_at: nowISO(),
+},
+{ onConflict: "user_id" }
+);
+
+if (up.error) {
+console.warn("⚠️ assessment_profile upsert failed:", up.error);
+// not fatal for 200; the dashboard can still read history
 }
 
-console.log("✅ Insert OK + profiles.assessment_taken updated");
+// 3) Optional: mark profiles.assessment_taken = true
+const flag = await supabase
+.from("profiles")
+.update({ assessment_taken: true, updated_at: nowISO() })
+.eq("id", row.user_id);
+
+if (flag.error) {
+console.warn("⚠️ profiles.assessment_taken update failed:", flag.error);
+// still OK overall
+return res.status(200).send("Inserted; profile update failed (manual retry)");
+}
+
+console.log("✅ Insert/Upsert OK + profiles.assessment_taken updated");
 return res.status(200).send("OK");
 } catch (err) {
 console.error("💥 Uncaught webhook error:", err);
