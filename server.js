@@ -7,7 +7,6 @@ const { randomUUID } = require("crypto");
 
 const PORT = process.env.PORT || 3000;
 
-// --- Env guard ---
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
 console.error("🚨 Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
 process.exit(1);
@@ -19,13 +18,12 @@ process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 const app = express();
-
-// Only parse multipart on the webhook route; keep others light
 const upload = multer({ limits: { fieldSize: 50 * 1024 * 1024 } });
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ----------------- helpers -----------------
+// helpers
 const toNumber = (v) => {
 if (v === null || v === undefined) return null;
 if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -41,24 +39,26 @@ return s ? s : null;
 };
 const nowISO = () => new Date().toISOString();
 
-/** safe getter that prefers outer, then raw */
 function pick(outer, raw, key) {
-if (outer && Object.prototype.hasOwnProperty.call(outer, key)) return outer[key];
-if (raw && Object.prototype.hasOwnProperty.call(raw, key)) return raw[key];
+// prefer defined, non-empty string/number
+const vOuter = outer && Object.prototype.hasOwnProperty.call(outer, key) ? outer[key] : undefined;
+if (vOuter !== undefined && vOuter !== null && String(vOuter).trim() !== "") return vOuter;
+
+const vRaw = raw && Object.prototype.hasOwnProperty.call(raw, key) ? raw[key] : undefined;
+if (vRaw !== undefined && vRaw !== null && String(vRaw).trim() !== "") return vRaw;
+
 return null;
 }
 
-// ----------------- webhook -----------------
 app.post("/", upload.any(), async (req, res) => {
 try {
 const ct = req.headers["content-type"] || "";
 console.log("🧾 Content-Type:", ct);
 console.log("🗂 multer fields:", Object.keys(req.body || {}));
 
-// Keep the original outer body intact
 const outer = req.body || {};
 
-// Parse rawRequest separately (do NOT overwrite outer)
+// Parse rawRequest without overwriting outer
 let raw = null;
 if (typeof outer.rawRequest === "string") {
 try {
@@ -70,13 +70,25 @@ console.warn("⚠️ rawRequest parse failed:", e?.message);
 }
 }
 
-// --- Resolve submission_id across both layers (PREFER outer.submissionID) ---
+// --- DIAGNOSTIC LOGS: show all candidate sources exactly as received
+console.log("🔎 candidates (outer):", {
+submissionID: outer?.submissionID,
+submission_id: outer?.submission_id,
+id: outer?.id,
+typeof_submissionID: typeof outer?.submissionID
+});
+console.log("🔎 candidates (raw):", raw ? {
+submissionID: raw?.submissionID,
+submission_id: raw?.submission_id,
+id: raw?.id,
+typeof_submissionID: typeof raw?.submissionID
+} : "raw: null");
+
+// --- Resolve submission_id robustly (prefer outer.submissionID)
 let submission_id =
-outer.submissionID || // <— Jotform outer body shows this in your logs
-outer.submission_id ||
-outer.id ||
-(raw && (raw.submissionID || raw.submission_id || raw.id)) ||
-null;
+pick(outer, raw, "submissionID") ||
+pick(outer, raw, "submission_id") ||
+pick(outer, raw, "id");
 
 if (!submission_id) {
 submission_id = `srv_${randomUUID()}`;
@@ -85,7 +97,7 @@ console.log("ℹ️ submission_id not provided; generated:", submission_id);
 console.log("✅ submission_id detected:", submission_id);
 }
 
-// --- Identity (prefer outer; fallback to raw) ---
+// Identity (prefer outer; fallback to raw)
 const email =
 pick(outer, raw, "q12_q12_email") ??
 pick(outer, raw, "q12_email") ??
@@ -102,7 +114,7 @@ console.warn("⚠️ Missing user_id/email", { user_id, email });
 return res.status(400).send("Missing user_id or email");
 }
 
-// --- Map assessment fields (outer first, then raw) ---
+// Map assessment fields
 const row = {
 submission_id,
 user_id,
@@ -142,8 +154,7 @@ email: row.email,
 final_percentage: row.final_percentage,
 });
 
-// --- 1) Idempotent write on submission_id ---
-// Requires unique index: create unique index if not exists ux_ar2_submission on assessment_results_2(submission_id);
+// 1) Idempotent write on submission_id
 const insert = await supabase
 .from("assessment_results_2")
 .upsert(row, { onConflict: "submission_id", ignoreDuplicates: true })
@@ -155,7 +166,7 @@ console.error("❌ Insert error:", insert.error);
 return res.status(500).send("Insert failed");
 }
 
-// --- 2) Snapshot for fast dashboard reads ---
+// 2) Snapshot for fast dashboard reads
 const ap = row.activate_percentage ?? 0;
 const bp = row.build_percentage ?? 0;
 const lp = row.leverage_percentage ?? 0;
@@ -187,10 +198,9 @@ updated_at: nowISO(),
 
 if (up.error) {
 console.warn("⚠️ assessment_profile upsert failed:", up.error);
-// not fatal
 }
 
-// --- 3) Optional: mark profile flag ---
+// 3) Optional: flag profile
 const flag = await supabase
 .from("profiles")
 .update({ assessment_taken: true, updated_at: nowISO() })
@@ -209,7 +219,6 @@ return res.status(500).send("Server error");
 }
 });
 
-// Health probe
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
 app.listen(PORT, () => {
